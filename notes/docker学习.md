@@ -997,6 +997,16 @@ ping 名字
 镜像拉取加速，用镜像网站
 
 
+## 修改容器的默认网络
+
+
+
+## 同一宿主机之间容器的通信
+默认启动容器，用 bridge 模式，默认网段为 `172.17.0.0/16` 网段，宿主机之间的容器可以互相通信
+
+
+
+
 ## 同一宿主机上不同网络的容器间通信
 同一个宿主机上一个 bridge 模式的网络，一个自定义网络，两个网络模式的容器间不能通信
 
@@ -1226,6 +1236,175 @@ docker0         8000.02421a1e1816       no              veth2517914
 /data # ping 172.17.0.2
 PING 172.17.0.2 (172.17.0.2): 56 data bytes
 ```
+
+## 跨主机网络互联
+
+### 利用桥接实现跨宿主机的容器互联
+1. 环境
+- 宿主机一
+ubuntu22.04 一个 NAT 模式的网卡，eth0，ip 为 10.0.0.204/24
+增加一个 host-only 模式的网卡，eth1，ip 为 192.168.10.134/24
+
+安装网桥工具
+```bash
+apt install -y bridge-utils
+```
+
+将 eth1 添加到 docker0 网桥上
+```bash
+brctl addif docker0 eth1
+```
+查看网桥
+```bash
+[root@nginx1 ~]$ brctl show
+bridge name     bridge id               STP enabled     interfaces
+docker0         8000.0242b28d3bcc       no              eth1
+                                                        veth0959e18
+                                                        veth5092855
+```
+查看 eth1：
+```bash
+[root@nginx1 ~]$ ip addr show eth1
+23: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master docker0 state UP group default qlen 1000
+    link/ether 00:0c:29:c7:92:c2 brd ff:ff:ff:ff:ff:ff
+    altname enp2s5
+    altname ens37
+    inet 192.168.10.134/24 brd 192.168.10.255 scope global dynamic noprefixroute eth1
+       valid_lft 1131sec preferred_lft 1131sec
+    inet6 fe80::568a:22c0:975b:dd75/64 scope link noprefixroute
+       valid_lft forever preferred_lft forever
+```
+
+运行一个 busybox 容器（该容器有 httpd 服务），用默认网络，即桥接到 docker0，
+默认第一个容器的 ip 为 `172.17.0.2/16`，为了不和另一个宿主机的容器 ip 冲突，可以继续
+多运行几个容器，后面的容器 ip 默认依次增加，然后将之前的容器删除，或者重启容器，容器重启后 ip 可能会变
+如运行的容器 ip 为 `172.17.0.3/16`
+```bash
+docker run -it --name b4 busybox:latest sh
+```
+
+- 宿主机二
+和宿主机一的环境相同
+eth0 为 NAT 模式，ip 为 `10.0.0.208`
+eth1 为 host-only 模式，ip 为 `192.168.10.133/24`
+
+运行的容器也为 busybox，ip 为 `172.17.0.4/16`
+
+
+2. 测试两宿主机容器之间的访问
+进入两宿主机的容器后，默认有 `/var/www` 目录，但为空
+设置 httpd 的家目录并建立一个 html 文件
+
+宿主机一的容器：
+```bash
+/ # httpd -h /var/www 
+/ # echo "10.0.0.204" > /var/www/index.html
+```
+
+宿主机二的容器：
+```bash
+/ # httpd -h /var/www 
+/ # echo "10.0.0.208" > /var/www/index.html
+```
+
+宿主机一上测试宿主机二：
+利用 wget 获取宿主机二中容器的文件，将内容显示在终端
+```bash
+/var/www # hostname -i
+172.17.0.3
+/var/www # wget -qO - http://172.17.0.4/index.html
+10.0.0.208
+```
+
+
+宿主机二上测试宿主机一：
+利用 wget 获取宿主机二中容器的文件，将内容显示在终端
+```bash
+/var/www # hostname -i
+172.17.0.4
+/var/www # wget -qO - http://172.17.0.3/index.html
+10.0.0.204
+```
+
+
+### 利用 NAT 实现跨主机的容器互联
+- 两个宿主机之间可以通信
+宿主机一 ip：10.0.0.204
+宿主机二 ip：10.0.0.208
+- 两个宿主机中容器的网段不一致
+默认两宿主机中启动容器的网段相同，为 `172.17.0.0/16`，先修改配置文件改为不同网段
+
+
+
+#### 修改 docker0 的网段
+宿主机一中修改 `/etc/docker/daemon.json` 中指明 docker0 的 ip：
+```bash
+{
+  "bip": "192.168.100.1/24",
+}
+```
+
+宿主机二中修改 `/etc/docker/daemon.json` 中指明 docker0 的 ip：
+```bash
+{
+  "bip": "192.168.200.1/24",
+}
+```
+
+修改后重启 docker，注意重启前先将正在运行的容器用 stop 停止
+```bash
+systemctl restart docker
+```
+
+用 `ip` 查看宿主机一 docker0 的 ip 已从原来的 `172.17.0.1` 变为 `192.168.100.1`
+
+#### 启动容器
+- 宿主机一启动一个容器：
+```bash
+[root@nginx1 ~]$ docker run -it --name server1 alpine sh
+```
+查看容器 ip
+```bash
+/ # hostname -i
+192.168.100.2
+```
+
+- 宿主机二启动一个容器：
+```bash
+[root@docker ~]$ docker run -it --name server2 alpine sh
+```
+查看容器 ip：
+```bash
+/ # hostname -i
+192.168.200.2
+```
+
+两个宿主机的容器不能通信
+
+#### 宿主机添加路由和 iptables 规则
+1. 宿主机一修改
+宿主机一的初始路由规则如下：
+```bash
+[root@host1 ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.2        0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+192.168.100.0   0.0.0.0         255.255.255.0   U     0      0        0 docker0
+```
+
+添加路由规则，到 `192.168.200.0/24` 网段，即宿主机二中容器的网段，则网关设为宿主机二的 ip
+```bash
+[root@host1 ~]$ ip route add 192.168.200.0/24 via 10.0.0.208 dev eth0
+[root@host1 ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.2        0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+192.168.100.0   0.0.0.0         255.255.255.0   U     0      0        0 docker0
+192.168.200.0   10.0.0.208      255.255.255.0   UG    0      0        0 eth0
+```
+
 
 # Docker Compose 容器单机编排工具
 > [Docker Compose overview](https://docs.docker.com/compose/)
