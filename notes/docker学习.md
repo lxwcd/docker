@@ -1405,6 +1405,110 @@ Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
 192.168.200.0   10.0.0.208      255.255.255.0   UG    0      0        0 eth0
 ```
 
+确认宿主机开启 ip_forward：
+```bash
+[root@host1 ~]$ cat /proc/sys/net/ipv4/ip_forward
+1
+```
+
+两个宿主机上添加 iptables 规则：
+```bash
+[root@host1 ~]$ iptables -A FORWARD -s 10.0.0.0/24 -j ACCEPT
+```
+
+添加规则后宿主机一的 iptables 规则如下：
+```bash
+[root@host1 ~]$ iptables -vnL
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+  304 54656 DOCKER-USER  all  --  *      *       0.0.0.0/0            0.0.0.0/0
+  304 54656 DOCKER-ISOLATION-STAGE-1  all  --  *      *       0.0.0.0/0            0.0.0.0/0
+    3   252 ACCEPT     all  --  *      docker0  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+  295 53900 DOCKER     all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    6   504 ACCEPT     all  --  docker0 !docker0  0.0.0.0/0            0.0.0.0/0
+  295 53900 ACCEPT     all  --  docker0 docker0  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  *      *       10.0.0.0/24          0.0.0.0/0
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain DOCKER (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain DOCKER-ISOLATION-STAGE-1 (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+    6   504 DOCKER-ISOLATION-STAGE-2  all  --  docker0 !docker0  0.0.0.0/0            0.0.0.0/0
+  304 54656 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-ISOLATION-STAGE-2 (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+    0     0 DROP       all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    6   504 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-USER (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+ 1494  257K RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+```
+
+当宿主机一中的容器 server1 ping 宿主机二中的容器 server2 时，在宿主机二中抓包如下：
+```bash
+[root@host2 ~]$ tcpdump -i eth0 -nn icmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+
+20:24:58.068794 IP 10.0.0.204 > 192.168.200.2: ICMP echo request, id 11, seq 0, length 64
+20:24:58.068942 IP 192.168.200.2 > 10.0.0.204: ICMP echo reply, id 11, seq 0, length 64
+```
+宿主机一中，根据路由规则，当目标地址为 192.168.200.2 时，网关为宿主机二的 eth0 地址，即 10.0.0.208
+宿主机一中的容器与外界通信时做了 DNAT 转换，出去的 ip 地址转换为宿主机的 ip，即 10.0.0.204
+
+宿主机二的 eth0 收到来源为 10.0.0.204，目标地址为 192.168.200.2 的包时，根据路由规则转发到 docker0：
+```bash
+[root@host2 ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.2        0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+192.168.100.0   10.0.0.204      255.255.255.0   UG    0      0        0 eth0
+192.168.200.0   0.0.0.0         255.255.255.0   U     0      0        0 docker0
+```
+因为不是本机的包，进入 FORWARD 链中，根据 iptables FORWARD 链的规则：
+```bash
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+  304 54656 DOCKER-USER  all  --  *      *       0.0.0.0/0            0.0.0.0/0
+  304 54656 DOCKER-ISOLATION-STAGE-1  all  --  *      *       0.0.0.0/0            0.0.0.0/0
+    3   252 ACCEPT     all  --  *      docker0  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+  295 53900 DOCKER     all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    6   504 ACCEPT     all  --  docker0 !docker0  0.0.0.0/0            0.0.0.0/0
+  295 53900 ACCEPT     all  --  docker0 docker0  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  *      *       10.0.0.0/24          0.0.0.0/0
+
+Chain DOCKER-ISOLATION-STAGE-1 (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+    6   504 DOCKER-ISOLATION-STAGE-2  all  --  docker0 !docker0  0.0.0.0/0            0.0.0.0/0
+  304 54656 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-ISOLATION-STAGE-2 (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+    0     0 DROP       all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    6   504 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-USER (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+ 1494  257K RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+```
+`in` 为 eth0，`out` 为 `docker0`，源为 `10.0.0.0/24`，匹配最后一条新家的规则，动作为 
+
+
+
+
+
+
+
 
 # Docker Compose 容器单机编排工具
 > [Docker Compose overview](https://docs.docker.com/compose/)
