@@ -336,6 +336,8 @@ tmux|screen
 ### docker run -e 创建环境变量
 
 
+### --rm 容器退出时自动删除
+
 
 ### docker run 传递命令
 
@@ -928,6 +930,18 @@ alpine             3.15      c059bfaa849c   18 months ago    5.59MB
 
 
 # Docker 网络管理
+
+网桥管理工具：brctl，ubuntu 22.04 默认未安装
+```bash
+[root@docker ~]$ brctl
+Command 'brctl' not found, but can be installed with:
+apt install bridge-utils
+[root@docker ~]$ apt install bridge-utils
+[root@docker ~]$
+[root@docker ~]$ whatis brctl
+brctl (8)            - ethernet bridge administration
+```
+
 同一宿主机中容器的网络通信
 容器的 IP 每次启动都变，不固定
 
@@ -983,9 +997,240 @@ ping 名字
 镜像拉取加速，用镜像网站
 
 
+## 同一宿主机上不同网络的容器间通信
+同一个宿主机上一个 bridge 模式的网络，一个自定义网络，两个网络模式的容器间不能通信
 
+```bash
+[root@docker ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.2        0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+172.17.0.0      0.0.0.0         255.255.0.0     U     0      0        0 docker0
+172.18.0.0      0.0.0.0         255.255.0.0     U     0      0        0 br-342c7e60094a
+```
+
+`docker0` 为网桥模式的网络接口，`br-342c7e60094a` 为自定义网络的网络接口
+
+
+默认 iptables 的规则如下
+```bash
+[root@docker ~]$ iptables -vnL
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+    4   336 DOCKER-USER  all  --  *      *       0.0.0.0/0            0.0.0.0/0
+    4   336 DOCKER-ISOLATION-STAGE-1  all  --  *      *       0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  *      br-342c7e60094a  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+    0     0 DOCKER     all  --  *      br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  br-342c7e60094a !br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  br-342c7e60094a br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  *      docker0  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+    0     0 DOCKER     all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  docker0 !docker0  0.0.0.0/0            0.0.0.0/0
+    0     0 ACCEPT     all  --  docker0 docker0  0.0.0.0/0            0.0.0.0/0
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain DOCKER (2 references)
+ pkts bytes target     prot opt in     out     source               destination
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.11          tcp dpt:16379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.11          tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.12          tcp dpt:16379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.12          tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.13          tcp dpt:16379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.13          tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.14          tcp dpt:16379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.14          tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.15          tcp dpt:16379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.15          tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.16          tcp dpt:16379
+    0     0 ACCEPT     tcp  --  !br-342c7e60094a br-342c7e60094a  0.0.0.0/0            172.18.0.16          tcp dpt:6379
+
+Chain DOCKER-ISOLATION-STAGE-1 (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+    2   168 DOCKER-ISOLATION-STAGE-2  all  --  br-342c7e60094a !br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+    2   168 DOCKER-ISOLATION-STAGE-2  all  --  docker0 !docker0  0.0.0.0/0            0.0.0.0/0
+   18  1512 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-ISOLATION-STAGE-2 (2 references)
+ pkts bytes target     prot opt in     out     source               destination
+    2   168 DROP       all  --  *      br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+    2   168 DROP       all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    3   252 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-USER (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+   22  1848 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+```
+
+在 FORWARD 链中有个自定义链 DOCKER-ISOLATION-STAGE-1，
+如果自定义网络中的容器 1 要和网桥模式容器 2通信，则匹配规则为 
+```bash
+2   168 DOCKER-ISOLATION-STAGE-2  all  --  br-342c7e60094a !br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+```
+因此进入自定义链 DOCKER-ISOLATION-STAGE-2，规则中，对出去接口为网桥接口的全部 DROP
+```bash
+2   168 DROP       all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+```
+
+DOCKER_USER 中的那个链，动作为 RETURN 的链作用:
+在iptables中，如果自定义链已经匹配了一个规则并成功处理，但没有最后的RETURN规则，它将继续返回到原来的调用链中，继续匹配自定义链后面的规则。
+
+例如，如果你在INPUT链中调用了一个名为MYCHAIN的自定义链，并且在MYCHAIN中的某个规则成功匹配和处理了数据包，但没有RETURN规则，iptables将继续返回到INPUT链，继续匹配后续的规则。这可能导致数据包匹配其他规则，并可能被其他规则处理或丢弃。
+
+如果你希望在自定义链中匹配到特定规则后立即返回，并防止继续匹配原来调用链中的规则，你应该在自定义链的最后添加一个RETURN规则。这样可以确保在找到匹配的规则后立即返回，而不会继续匹配调用链中的规则。
+
+
+### 解决方案一：修改 iptables 规则
+将 DOCKER-ISOLATION-STAGE-2 中的规则做如下修改：
+```bash
+Chain DOCKER-ISOLATION-STAGE-2 (2 references)
+ pkts bytes target     prot opt in     out     source               destination
+    2   168 ACCEPT       all  --  *      br-342c7e60094a  0.0.0.0/0            0.0.0.0/0
+    2   168 ACCEPT       all  --  *      docker0  0.0.0.0/0            0.0.0.0/0
+    3   252 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+```
+修改后两个不同网络的容器可以互相连通
+
+
+### 解决方案二：利用 docker network connect 实现
+例如网桥模式的容器名为 `alpine-01`，自定义的网络名为 `net-redis`，宿主机执行：
+```bash
+[root@docker ~]$ docker network connect net-redis alpine-01
+```
+将容器 `alpine-01` 连到自定义网络 `net-redis` 上，此时在容器 `alpine-01` 中查看其多了一块网络接口，
+和自定义网络在同一个网段的接口
+```bash
+/ # ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+22: eth0@if23: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+24: eth1@if25: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP
+    link/ether 02:42:ac:12:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 172.18.0.2/16 brd 172.18.255.255 scope global eth1
+       valid_lft forever preferred_lft forever
+```
+容器原本的 IP 为 `172.17.0.2`，增加一个和自定义网络在一个网段的 IP `172.18.0.2` 和网络接口
+
+此时容器 `alpine-01` 能和自定义网络中的容器通信，但自定义网络中的容器不能和容器 `alpine-01` 通信
+
+
+如果双方都需要通信，再将自定义网络中需要通信的容器加入 bridge 网络中
+```bash
+[root@docker ~]$ docker network connect bridge redis-1
+```
+此时自定义网络中的容器 `redis-1` 可以和网桥模式的 `alpine-01` 通信
+但自定义网络中的其他容器，如 `redis-2` 不能和网桥模式的容器 `alpine-01` 通信
+可以查看网桥中会多出一个容器 `redis-1`：
+```bash
+[root@docker ~]$ docker network inspect bridge
+[
+    {
+        "Name": "bridge",
+        "Id": "2dcbc1579c1b51fe5db7587fd5551246cd921c552adfcacea56666483608f768",
+        "Created": "2023-06-24T08:49:26.470950818+08:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": null,
+            "Config": [
+                {
+                    "Subnet": "172.17.0.0/16",
+                    "Gateway": "172.17.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "acc8221850dcbf963e1e55dfcc3db16093a5a30eb4b8dbf7b7bb1fdffbe7bdac": {
+                "Name": "alpine-01",
+                "EndpointID": "d73a2b0a073704ae7be0c14f23163d9342b39150705a03fdb732377bf2571ec6",
+                "MacAddress": "02:42:ac:11:00:02",
+                "IPv4Address": "172.17.0.2/16",
+                "IPv6Address": ""
+            },
+            "cb676b693e8b84774d8cc5c5629b884b7d6418419e98c382dd26c75383f90982": {
+                "Name": "redis-1",
+                "EndpointID": "399306929f2cbec77658b5190b92ffe987a262faffbfd2bdeaa1e60402d83b14",
+                "MacAddress": "02:42:ac:11:00:03",
+                "IPv4Address": "172.17.0.3/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {
+            "com.docker.network.bridge.default_bridge": "true",
+            "com.docker.network.bridge.enable_icc": "true",
+            "com.docker.network.bridge.enable_ip_masquerade": "true",
+            "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
+            "com.docker.network.bridge.name": "docker0",
+            "com.docker.network.driver.mtu": "1500"
+        },
+        "Labels": {}
+    }
+]
+```
+
+或者用 `brctl show` 查看网桥，看到网桥上多出接口：
+```bash
+[root@docker ~]$ brctl show
+bridge name     bridge id               STP enabled     interfaces
+br-342c7e60094a 8000.0242f9060ce1       no              veth0b1b9eb
+                                                        veth0ddfd17
+                                                        veth1c3d696
+                                                        veth3f64764
+                                                        veth52b99c2
+                                                        veth768c304
+                                                        vethd51cf7f
+                                                        vethe74d919
+docker0         8000.02421a1e1816       no              veth2517914
+                                                        veth4fff7ee
+```
+上面可以看到有两个网桥，一个默认 docker0，容器 `alpine-01` 和 `redis-1` 新增的一个接口在该网桥上
+另一个自定义的网桥 `br-342c7e60094a` 上为定义为自定义网络的容器外，还有一个 `alpine-01` 新增的网络接口
+
+****************
+
+注意，如果启动一个容器 `redis-7`，其网络选择自定义网络，并在运行时加 `--privileged` 标识，
+然后在容器中用 `ip addr add` 增肌一个和 docker0 在一个网段的 IP（该命令需要宿主机的特权，因此要以 --privileged 运行）
+增加后仍不能与自定义网络内的容器通信，因为 iptables 的规则限制，其网络接口还是不变
+```bash
+/data # ip addr add 172.17.0.4/16 dev eth0
+/data # ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+28: eth0@if29: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP
+    link/ether 02:42:ac:12:00:11 brd ff:ff:ff:ff:ff:ff
+    inet 172.18.0.17/16 brd 172.18.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet 172.17.0.4/16 scope global eth0
+       valid_lft forever preferred_lft forever
+/data # ping 172.17.0.2
+PING 172.17.0.2 (172.17.0.2): 56 data bytes
+```
 
 # Docker Compose 容器单机编排工具
+> [Docker Compose overview](https://docs.docker.com/compose/)
+
+
 单机运行多个容器时管理多个的容器的启动，如顺序，网络配置等
 
 类似 makefile
