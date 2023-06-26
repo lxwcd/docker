@@ -15,6 +15,9 @@ docker/dockerfile/web/nginx
 ```
 下面的 run.sh 为运行脚本
 ```bash
+[root@docker nginx]$ pwd
+/docker/dockerfile/web/nginx
+[root@docker nginx]$
 [root@docker nginx]$ tree -L 1
 .
 ├── addUser.sh
@@ -22,6 +25,7 @@ docker/dockerfile/web/nginx
 ├── data
 ├── Dockerfile
 ├── entrypoint.sh
+├── getImgs.sh
 ├── init_data.sh
 ├── nginx
 ├── php8
@@ -29,7 +33,10 @@ docker/dockerfile/web/nginx
 ├── run_mysql.sh
 ├── run.sh
 └── src
+
+5 directories, 8 files
 ```
+
 
 # 宿主机建立账号
 - nginx 和 php-fpm 使用的用户和组为 www(124)
@@ -86,6 +93,9 @@ registry.cn-hangzhou.aliyuncs.com/lnmp_wordpress/nginx-alpine   2.14-01   ffbecc
 ```bash
 [root@nginx1 shell_scripts]$ docker pull mysql:5.7
 ```
+
+在运行脚本中会调用同级目录下的 `getImgs.sh` 来制作需要的两个镜像
+
 
 # 启动容器
 镜像构建的 Dockerfile 以及运行的脚本均在同级 `docker` 目录中
