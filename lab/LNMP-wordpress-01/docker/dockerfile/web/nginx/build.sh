@@ -1,5 +1,7 @@
 #!/bin/bash 
 
-IMAGE="nginx-alpine:2.14-01"
+#IMAGE="nginx-alpine:2.14-01"
 
-docker build --no-cache -t ${IMAGE} -f Dockerfile .
+echo "***************** build nginx: ${IMG_NGINX} *********************"
+
+docker build --no-cache -t ${IMG_NGINX} -f Dockerfile .

@@ -1,18 +1,20 @@
 #!/bin/bash 
 
-
-# docker run in ubuntu22.04
-# run nginx
-
+# create apline and nginx images
+if ! source getImgs.sh; then 
+    return 1
+fi 
 
 # add user and group in ubuntu22.04
-. addUser.sh
+if ! source addUser.sh; then
+    return 1
+fi
 
-[ $? -gt 0 ] && return 
 
+# run nginx+php-fpm
 cd ../../../web/
 
-IMAGE="nginx-alpine:2.14-01"
+#IMAGE="nginx-alpine:2.14-01"
 #IMAGE="registry.cn-hangzhou.aliyuncs.com/lnmp_wordpress/nginx-alpine:2.14-01"
 PORT_HOST="80"
 PATH_HOST_PREFIX=$PWD
@@ -31,8 +33,9 @@ docker run -d -p ${PORT_HOST}:80 \
            -v ${PATH_HOST_PREFIX}/nginx/logs:/usr/local/nginx/logs \
            -v ${PATH_HOST_PREFIX}/php82:/etc/php82  \
            --name ${NGINX_NAME:=nginx-01} \
-           ${IMAGE}
+           ${IMG_NGINX}
 
+[ $? -gt 0 ] && return 1
 
 # run mysql
 . run_mysql.sh

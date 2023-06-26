@@ -1,3 +1,5 @@
 #!/bin/bash 
 
-docker build -t alpine-base:3.18-01 -f Dockerfile .
+echo "***************** build alpine: ${IMG_ALPINE} *********************"
+
+docker build -t ${IMG_ALPINE} -f Dockerfile .

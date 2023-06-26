@@ -53,8 +53,43 @@ e3adb504d07c   bridge       bridge    local
 ```
 
 
+## 创建路由器容器
+```bash
+[root@docker ~]$ docker run -it --name router --network net_router alpine-base:3.18-01 sh
+/ # hostname -i
+172.19.0.2
+```
 
+## 让客户端能访问路由器
+将客户端容器加入到路由器的网络中
 
+```bash
+[root@docker ~]$ docker network connect net_router client
+```
+
+查看客户端的 ip：
+```bash
+[root@docker ~]$ docker exec -it client sh
+/ # ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+57: eth0@if58: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP
+    link/ether 02:42:ac:12:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 172.18.0.2/16 brd 172.18.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+61: eth1@if62: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue state UP
+    link/ether 02:42:ac:13:00:03 brd ff:ff:ff:ff:ff:ff
+    inet 172.19.0.3/16 brd 172.19.255.255 scope global eth1
+       valid_lft forever preferred_lft forever
+/ # ping 172.19.0.2
+PING 172.19.0.2 (172.19.0.2): 56 data bytes
+64 bytes from 172.19.0.2: seq=0 ttl=64 time=0.280 ms
+```
+
+# LVS
+LVS 的 dip 以及后面的 nginx 服务器等都在默认网段 `172.17.0.0/16` 
 
 
 
