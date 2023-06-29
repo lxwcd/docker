@@ -1,12 +1,12 @@
 #!/bin/bash 
 
 # create apline and nginx images
-if ! source getImgs.sh; then 
+if ! source get_imgs.sh; then 
     return 1
 fi 
 
 # add user and group in ubuntu22.04
-if ! source addUser.sh; then
+if ! source add_user.sh; then
     return 1
 fi
 
