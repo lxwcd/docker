@@ -10,6 +10,11 @@ if ! source addUser.sh; then
     return 1
 fi
 
+# init data, copy shared data to host dir and modify owner and group
+if ! source init_data.sh; then
+    return 1
+fi
+
 
 # run nginx+php-fpm
 cd ../../../web/
@@ -38,4 +43,6 @@ docker run -d -p ${PORT_HOST}:80 \
 [ $? -gt 0 ] && return 1
 
 # run mysql
-. run_mysql.sh
+if ! source run_mysql.sh; then
+    return 1
+fi
