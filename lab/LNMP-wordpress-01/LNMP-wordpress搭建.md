@@ -20,12 +20,12 @@ docker/dockerfile/web/nginx
 [root@docker nginx]$
 [root@docker nginx]$ tree -L 1
 .
-├── addUser.sh
+├── add_user.sh
 ├── build.sh
 ├── data
 ├── Dockerfile
 ├── entrypoint.sh
-├── getImgs.sh
+├── get_imgs.sh
 ├── init_data.sh
 ├── nginx
 ├── php8
@@ -53,7 +53,7 @@ useradd -s /sbin/nologin -u 999 -g 999 -r -M mysql
 ```
 - 上面创建的 user 和 group 已经写到 Dockerfile 中，而 mysql 是直接用官方的镜像，如果要修改 owner 和 group 需要重新做镜像
 
-- 建账号的脚本为 `docker/dockerfile/web/nginx/addUser.sh`，在 `run.sh` 脚本中执行的第一个脚本，如果账号不满足要求则不能执行脚本
+- 建账号的脚本为 `docker/dockerfile/web/nginx/add_user.sh`，在 `run.sh` 脚本中执行的第一个脚本，如果账号不满足要求则不能执行脚本
 
 
 # 修改宿主机挂载的文件路径和属性
@@ -94,7 +94,7 @@ registry.cn-hangzhou.aliyuncs.com/lnmp_wordpress/nginx-alpine   2.14-01   ffbecc
 [root@nginx1 shell_scripts]$ docker pull mysql:5.7
 ```
 
-在运行脚本中会调用同级目录下的 `getImgs.sh` 来制作需要的两个镜像
+在运行脚本中会调用同级目录下的 `get_imgs.sh` 来制作需要的两个镜像
 
 
 # 启动容器
