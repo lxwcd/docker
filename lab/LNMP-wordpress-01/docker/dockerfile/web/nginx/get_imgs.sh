@@ -31,10 +31,16 @@ checkImg() {
 
 if ! checkImg "${IMG_ALPINE}"; then
     IMG_ALPINE=${IMG_NAME}
-    if ! source ../../system/alpine/build.sh; then
+    
+    cd ../../system/alpine &> /dev/null
+
+    if ! source build.sh; then
         return 1
     fi
+
+    cd - &> /dev/null
 fi
+
 
 if ! checkImg "${IMG_NGINX}"; then
     IMG_NGINX=${IMG_NAME}

@@ -1,9 +1,78 @@
-LNMP-wordpress 搭建博客
+LNMP-wordpress 搭建博客-02
 
-用容器是实现的第二个实验，加上一个 LVS 调度，连个 nginx 实现负载均衡
+用容器是实现的第二个实验，加上一个 Haproxy 调度，nginx 实现负载均衡
 
 
-# 环境
+redis 做会话保持，redis 3 个节点，哨兵监控
+mysql 主从复制，MHA 高可用
+NFS 存放数据
+
+
+# 实验目的
+- 熟悉 docker 制作镜像以及网络环境搭建
+- 熟悉 Haproxy 做反向代理的使用
+- 熟悉 redis 的使用
+本实验中 web 服务器只有两个，但为了操作 redis 集群使用，用 6 个 redis 服务器
+- 熟悉用 docker compose 来进行单机容器的编排
+
+# 实验环境
+- win11 上安装 vmware，vmware 中安装 ubuntu22.04 作为宿主机，实验在容器环境中进行
+- 一个 Haproxy 做代理
+- 两个 nginx+php-fpm 提供 web 服务
+- 一个 mysql 存放数据
+- 一个 redis 集群做会话保持（3 个 redis 容器，1主2从，配置哨兵）
+- 将 web 网页数据存放在宿主机中，通过 rsync 将数据同步到另一个宿主机中保存备份
+- 最后用 docker compose 来进行容器的编排
+- 创建一个自定义网络 net_server，容器在自定义网络中运行
+
+
+
+# 创建服务端自定义网络
+- 创建自定义网络 net-server
+
+```bash
+[root@docker redis]$ docker network create -d bridge --subnet 172.27.0.0/16 --gateway 172.27.0.1 net-server
+d089259c4b6b6d46d19a93714b52511bb6827cd1e85161f9f153eacf7b50f210
+[root@docker redis]$ docker network ls
+NETWORK ID     NAME         DRIVER    SCOPE
+33536d4425f5   bridge       bridge    local
+20043ee9ac13   host         host      local
+d089259c4b6b   net-server   bridge    local
+3f30de7abd8f   none         null      local
+```
+
+
+# redis 容器
+> [redis](https://github.com/docker-library/redis/blob/2e6e8961037d8b2838a4105bb9a761441e1ae477/7.2-rc/alpine/docker-entrypoint.sh)
+
+
+- 创建 3 个 redis 容器，指定网络为 net-server
+- 如果实验在容器中做，可以不曝露端口，先将端口曝露，方便实验一些测试等
+容器的端口可以不变，用默认的 6379，宿主机的端口分为 6370-6375
+- 配置文件、数据和日志做持久化处理
+- 配置哨兵，1主2从
+- 配置好三个 redis server 的密码，使用默认用户 `default`，密码通过配置文件中 `requirepass` 指定
+- 三个节点的密码相同
+- 配置 `masterauth`，密码和 `requirepass`，即主节点的登录密码，主节点也配置，防止主节点出故障后恢复成为从节点
+- 从节点配置 `replicaof <masterip> <masterport>`，即指定主节点的 ip 和端口
+- entrypoint 需要将 redis-server 和 redis-sentinel 均启动
+```bash
+#!/bin/sh
+
+set -e
+
+redis-server /usr/local/redis/etc/redis.conf &
+redis-sentinel /usr/local/redis/etc/sentinel.conf
+```
+在两者的配置文件中，均指定 `daemonize no`，即前提运行，但启动 redis-server 需要加上 `&`，
+否则后面的 `redis-sentinel` 不能启动
+
+
+# nginx+php-fpm Web 服务器
+nginx+php-fpm 镜像可以用第一个实验的镜像
+但这里运行两个容器，两个容器的数据共享，因此用数据卷来共享一个宿主机上的文件
+
+
 
 # 客户端
 
@@ -87,12 +156,6 @@ e3adb504d07c   bridge       bridge    local
 PING 172.19.0.2 (172.19.0.2): 56 data bytes
 64 bytes from 172.19.0.2: seq=0 ttl=64 time=0.280 ms
 ```
-
-# LVS
-LVS 的 dip 以及后面的 nginx 服务器等都在默认网段 `172.17.0.0/16` 
-
-
-
 
 
 
