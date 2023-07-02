@@ -70,10 +70,21 @@ redis-sentinel /usr/local/redis/etc/sentinel.conf
 
 # nginx+php-fpm Web 服务器
 nginx+php-fpm 镜像可以用第一个实验的镜像
-但这里运行两个容器，两个容器的数据共享，因此用数据卷来共享一个宿主机上的文件
+但这里运行两个容器，两个容器的数据共享，因此用数据卷容器
 
 
+original content in /etc/apk # cat repositories
+https://dl-cdn.alpinelinux.org/alpine/v3.18/main
+https://dl-cdn.alpinelinux.org/alpine/v3.18/community
 
+
+modify with sed command to the following:
+
+
+https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.18/main
+https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.18/community
+https://dl-cdn.alpinelinux.org/alpine/v3.18/main
+https://dl-cdn.alpinelinux.org/alpine/v3.18/community
 # 客户端
 
 ## 创建独立网络

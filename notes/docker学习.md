@@ -594,7 +594,7 @@ ARG NGINX_URL="https://nginx.org/download/" \
 
 
 
-## RUN
+### RUN
 写多个 run 会创建多层镜像？
 
 安装包
@@ -602,7 +602,7 @@ no-cache 不保留缓存
 
 生成镜像时执行
 
-## CMD 容器启动命令
+### CMD 容器启动命令
 镜像生成容器时默认执行的命令
 
 写命令时两种格式的区别：
@@ -610,7 +610,7 @@ no-cache 不保留缓存
 而用 ["",""] 写法不会
 
 
-## ENTRYPOING 入口点
+### ENTRYPOING 入口点
 - 为什么需要
 配置文件和启动程序的分离存放
 配置文件环境的初始化
@@ -1501,11 +1501,8 @@ Chain DOCKER-USER (1 references)
  pkts bytes target     prot opt in     out     source               destination
  1494  257K RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
 ```
-`in` 为 eth0，`out` 为 `docker0`，源为 `10.0.0.0/24`，匹配最后一条新家的规则，动作为 
-
-
-
-
+`in` 为 eth0，`out` 为 `docker0`，源为 `10.0.0.0/24`，匹配最后一条新加的规则，动作为`ACCEPT`
+因此，如果不新加一条该规则，则用默认策略，即 `DROP`
 
 
 
