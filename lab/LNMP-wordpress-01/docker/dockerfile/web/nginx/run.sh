@@ -36,7 +36,8 @@ fi
 docker run -d -p ${PORT_HOST}:80 \
            -v ${PATH_HOST_PREFIX}/nginx/conf:/usr/local/nginx/conf \
            -v ${PATH_HOST_PREFIX}/nginx/logs:/usr/local/nginx/logs \
-           -v ${PATH_HOST_PREFIX}/php82:/etc/php82  \
+           -v ${PATH_HOST_PREFIX}/php82:/etc/php82 \
+	   -v ${PATH_HOST_PREFIX}/data:/data/www \
            --name ${NGINX_NAME:=nginx-01} \
            ${IMG_NGINX}
 

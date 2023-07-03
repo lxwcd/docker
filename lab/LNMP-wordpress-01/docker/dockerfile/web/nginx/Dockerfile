@@ -1,5 +1,4 @@
 FROM alpine-base:3.18-01
-# FROM alpine-base:3.18-01
 
 LABEL maintainer="lx" \
       description="nginx + php-fpm, based on alpine"
@@ -40,7 +39,7 @@ RUN set -x \
     && ln -sf /dev/stderr ${PATH_PREFIX}/logs/error.log \
     && mkdir -p ${PATH_DATA} && chown -R www:www ${PATH_DATA} \
     && apk add --no-cache php82-fpm=8.2.7-r0 php82-mysqlnd=8.2.7-r0 \
-       php82-common=8.2.7-r0 php82-mysqli=8.2.7-r0 \
+       php82-common=8.2.7-r0 php82-mysqli=8.2.7-r0 php82-session=8.2.7-r0 \
     && rm -rf ${PATH_TMP} \
     && apk del build-base \
     && rm -rf /var/cache/apt/* 
