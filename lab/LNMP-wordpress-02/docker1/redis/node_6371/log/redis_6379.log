@@ -1,0 +1,78 @@
+7:C 01 Jul 2023 15:36:18.935 # oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+7:C 01 Jul 2023 15:36:18.935 # Redis version=7.0.11, bits=64, commit=00000000, modified=0, pid=7, just started
+7:C 01 Jul 2023 15:36:18.935 # Configuration loaded
+7:S 01 Jul 2023 15:36:18.936 * monotonic clock: POSIX clock_gettime
+7:S 01 Jul 2023 15:36:18.936 # Warning: Could not create server TCP listening socket ::1:6379: bind: Address not available
+7:S 01 Jul 2023 15:36:18.937 * Running mode=standalone, port=6379.
+7:S 01 Jul 2023 15:36:18.937 # Server initialized
+7:S 01 Jul 2023 15:36:18.946 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+7:S 01 Jul 2023 15:36:18.950 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+7:S 01 Jul 2023 15:36:18.950 * Ready to accept connections
+7:S 01 Jul 2023 15:36:18.950 * Connecting to MASTER 172.27.0.10:6379
+7:S 01 Jul 2023 15:36:18.951 * MASTER <-> REPLICA sync started
+7:S 01 Jul 2023 15:36:18.951 * Non blocking connect for SYNC fired the event.
+7:S 01 Jul 2023 15:36:18.951 * Master replied to PING, replication can continue...
+7:S 01 Jul 2023 15:36:18.951 * Partial resynchronization not possible (no cached master)
+7:S 01 Jul 2023 15:36:48.693 * Full resync from master: b7028bd3c8774074343fcb4f48e9c3fc37cd25d6:5819
+7:S 01 Jul 2023 15:36:48.695 * MASTER <-> REPLICA sync: receiving streamed RDB from master with EOF to disk
+7:S 01 Jul 2023 15:36:48.695 * MASTER <-> REPLICA sync: Flushing old data
+7:S 01 Jul 2023 15:36:48.695 * MASTER <-> REPLICA sync: Loading DB in memory
+7:S 01 Jul 2023 15:36:48.698 * Loading RDB produced by version 7.0.11
+7:S 01 Jul 2023 15:36:48.698 * RDB age 0 seconds
+7:S 01 Jul 2023 15:36:48.698 * RDB memory usage when created 1.16 Mb
+7:S 01 Jul 2023 15:36:48.698 * Done loading RDB, keys loaded: 0, keys expired: 0.
+7:S 01 Jul 2023 15:36:48.699 * MASTER <-> REPLICA sync: Finished with success
+7:S 01 Jul 2023 15:36:48.699 * Creating AOF incr file temp-appendonly.aof.incr on background rewrite
+7:S 01 Jul 2023 15:36:48.699 * Background append only file rewriting started by pid 17
+17:C 01 Jul 2023 15:36:48.703 * Successfully created the temporary AOF base file temp-rewriteaof-bg-17.aof
+17:C 01 Jul 2023 15:36:48.703 * Fork CoW for AOF rewrite: current 0 MB, peak 0 MB, average 0 MB
+7:S 01 Jul 2023 15:36:48.758 * Background AOF rewrite terminated with success
+7:S 01 Jul 2023 15:36:48.758 * Successfully renamed the temporary AOF base file temp-rewriteaof-bg-17.aof into appendonly.aof.2.base.rdb
+7:S 01 Jul 2023 15:36:48.758 * Successfully renamed the temporary AOF incr file temp-appendonly.aof.incr into appendonly.aof.2.incr.aof
+7:S 01 Jul 2023 15:36:48.760 * Removing the history file appendonly.aof.1.incr.aof in the background
+7:S 01 Jul 2023 15:36:48.760 * Removing the history file appendonly.aof.1.base.rdb in the background
+7:S 01 Jul 2023 15:36:48.761 * Background AOF rewrite finished successfully
+7:M 01 Jul 2023 15:49:50.500 # Connection with master lost.
+7:M 01 Jul 2023 15:49:50.500 * Caching the disconnected master state.
+7:M 01 Jul 2023 15:49:50.500 * Discarding previously cached master state.
+7:M 01 Jul 2023 15:49:50.500 # Setting secondary replication ID to b7028bd3c8774074343fcb4f48e9c3fc37cd25d6, valid up to offset: 163799. New replication ID is b5ea703708bf26937e904d33af4c15b964b98109
+7:M 01 Jul 2023 15:49:50.500 * MASTER MODE enabled (user request from 'id=3 addr=172.27.0.11:37602 laddr=172.27.0.11:6379 fd=9 name=sentinel-083ae14f-cmd age=811 idle=0 flags=x db=0 sub=0 psub=0 ssub=0 multi=4 qbuf=188 qbuf-free=20286 argv-mem=4 multi-mem=169 rbs=2048 rbp=1024 obl=45 oll=0 omem=0 tot-mem=23589 events=r cmd=exec user=default redir=-1 resp=2')
+7:M 01 Jul 2023 15:49:50.520 # CONFIG REWRITE executed with success.
+7:M 01 Jul 2023 15:49:51.410 * Replica 172.27.0.12:6379 asks for synchronization
+7:M 01 Jul 2023 15:49:51.410 * Partial resynchronization request from 172.27.0.12:6379 accepted. Sending 297 bytes of backlog starting from offset 163799.
+7:M 01 Jul 2023 15:52:18.979 * Replica 172.27.0.10:6379 asks for synchronization
+7:M 01 Jul 2023 15:52:18.979 * Partial resynchronization not accepted: Replication ID mismatch (Replica asked for 'c21e678ba9ef99d4d4308d5e18a4acd1d5cdec41', my replication IDs are 'b5ea703708bf26937e904d33af4c15b964b98109' and 'b7028bd3c8774074343fcb4f48e9c3fc37cd25d6')
+7:M 01 Jul 2023 15:52:18.979 * Delay next BGSAVE for diskless SYNC
+7:M 01 Jul 2023 15:52:38.357 # Connection with replica 172.27.0.10:6379 lost.
+7:M 01 Jul 2023 16:07:52.370 * Replica 172.27.0.10:6379 asks for synchronization
+7:M 01 Jul 2023 16:07:52.370 * Full resync requested by replica 172.27.0.10:6379
+7:M 01 Jul 2023 16:07:52.370 * Delay next BGSAVE for diskless SYNC
+7:M 01 Jul 2023 16:08:22.907 * Starting BGSAVE for SYNC with target: replicas sockets
+7:M 01 Jul 2023 16:08:22.908 * Background RDB transfer started by pid 28
+28:C 01 Jul 2023 16:08:22.910 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+7:M 01 Jul 2023 16:08:22.910 # Diskless rdb transfer, done reading from pipe, 1 replicas still up.
+7:M 01 Jul 2023 16:08:22.913 * Background RDB transfer terminated with success
+7:M 01 Jul 2023 16:08:22.913 * Streamed RDB transfer with replica 172.27.0.10:6379 succeeded (socket). Waiting for REPLCONF ACK from slave to enable streaming
+7:M 01 Jul 2023 16:08:22.913 * Synchronization with replica 172.27.0.10:6379 succeeded
+7:M 01 Jul 2023 16:36:19.007 * 1 changes in 3600 seconds. Saving...
+7:M 01 Jul 2023 16:36:19.008 * Background saving started by pid 29
+29:C 01 Jul 2023 16:36:19.011 * DB saved on disk
+29:C 01 Jul 2023 16:36:19.011 * Fork CoW for RDB: current 0 MB, peak 0 MB, average 0 MB
+7:M 01 Jul 2023 16:36:19.109 * Background saving terminated with success
+7:M 01 Jul 2023 18:34:43.145 # Disconnecting timedout replica (streaming sync): 172.27.0.12:6379
+7:M 01 Jul 2023 18:34:43.145 # Connection with replica 172.27.0.12:6379 lost.
+7:M 01 Jul 2023 18:34:43.146 # Disconnecting timedout replica (streaming sync): 172.27.0.10:6379
+7:M 01 Jul 2023 18:34:43.146 # Connection with replica 172.27.0.10:6379 lost.
+7:M 01 Jul 2023 18:34:43.147 * Replica 172.27.0.12:6379 asks for synchronization
+7:M 01 Jul 2023 18:34:43.147 * Partial resynchronization request from 172.27.0.12:6379 accepted. Sending 14 bytes of backlog starting from offset 1933349.
+7:M 01 Jul 2023 18:34:43.148 * Replica 172.27.0.10:6379 asks for synchronization
+7:M 01 Jul 2023 18:34:43.148 * Partial resynchronization request from 172.27.0.10:6379 accepted. Sending 14 bytes of backlog starting from offset 1933349.
+7:M 01 Jul 2023 18:42:00.232 # Disconnecting timedout replica (streaming sync): 172.27.0.12:6379
+7:M 01 Jul 2023 18:42:00.232 # Connection with replica 172.27.0.12:6379 lost.
+7:M 01 Jul 2023 18:42:00.232 # Disconnecting timedout replica (streaming sync): 172.27.0.10:6379
+7:M 01 Jul 2023 18:42:00.232 # Connection with replica 172.27.0.10:6379 lost.
+7:M 01 Jul 2023 18:42:00.234 * Replica 172.27.0.12:6379 asks for synchronization
+7:M 01 Jul 2023 18:42:00.234 * Partial resynchronization request from 172.27.0.12:6379 accepted. Sending 411 bytes of backlog starting from offset 2005079.
+7:M 01 Jul 2023 18:42:00.265 * Replica 172.27.0.10:6379 asks for synchronization
+7:M 01 Jul 2023 18:42:00.265 * Partial resynchronization request from 172.27.0.10:6379 accepted. Sending 411 bytes of backlog starting from offset 2005079.
+7:M 01 Jul 2023 20:56:42.195 # Connection with replica 172.27.0.10:6379 lost.

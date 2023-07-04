@@ -1,34 +1,335 @@
 LNMP-wordpress 搭建博客-02
 
-用容器是实现的第二个实验，加上一个 Haproxy 调度，nginx 实现负载均衡
+# 实验介绍
+- 在第一个实验的基础上改进，nginx 用两个做负载均衡
+    - 两个 nginx 用容器做
+    - 两个 nginx 的容器的数据做持久化化，且共享，可以用容器数据卷容器实现
+    - 相较于第一个实验，php-fpm 需要安装 session 扩展模块来支持 session 保存
+    - 想要用 redis 存储 seesion 信息，需要安装 redis 扩展模块
+
+- 增加 redis 主从做会话保持，一主两从模式，配置三个哨兵，三个哨兵和三个redis server 分别在一个容器中
+
+- 增加一个反向代理来调度两个 nginx 服务器
+    - 方案一：用 LVS 来做反向代理调度
+    LVS 需要用到内核模块，不做成容器
+    - 方案二：用 haproxy 做反向代理调度
+    haproxy 用容器实现
+  
+
+# LVS 代理实验
+- win11 上安装 vmware，vmware 中安装 ubuntu22.04 做实验
+- 一个 ubuntu22.04，NAT 模式网卡，IP 10.0.0.208，运行下面容器：
+    - 两个 nginx+php-fpm 提供 web 服务
+    将 web 网页数据和配置文件、日志等做持久化处理，存放在宿主机中
+    两个 web server 的数据共享
+    - 一个 mysql 存放数据
+    - 一个 redis 集群做会话保持（3 个 redis 容器，1主2从，配置哨兵）
+- 一个 ubuntu22.04 宿主机
 
 
-redis 做会话保持，redis 3 个节点，哨兵监控
-mysql 主从复制，MHA 高可用
-NFS 存放数据
 
-
-# 实验目的
-- 熟悉 docker 制作镜像以及网络环境搭建
-- 熟悉 Haproxy 做反向代理的使用
-- 熟悉 redis 的使用
-本实验中 web 服务器只有两个，但为了操作 redis 集群使用，用 6 个 redis 服务器
-- 熟悉用 docker compose 来进行单机容器的编排
-
-# 实验环境
-- win11 上安装 vmware，vmware 中安装 ubuntu22.04 作为宿主机，实验在容器环境中进行
-- 一个 Haproxy 做代理
-- 两个 nginx+php-fpm 提供 web 服务
-- 一个 mysql 存放数据
-- 一个 redis 集群做会话保持（3 个 redis 容器，1主2从，配置哨兵）
-- 将 web 网页数据存放在宿主机中，通过 rsync 将数据同步到另一个宿主机中保存备份
-- 最后用 docker compose 来进行容器的编排
-- 创建一个自定义网络 net_server，容器在自定义网络中运行
+环境变量在 `env.sh` 中定义，包含镜像名，容器 IP 等
 
 
 
-# 创建服务端自定义网络
+
+## 客户端
+- ubuntu22.04 host-only 网络模式，IP：10.0.0.204
+
+- 网卡配置
+```bash
+network:
+  version: 2
+ #renderer: networkd
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      match:
+        name: eth0
+      addresses: 
+      - 192.168.10.204/24
+      routes:
+      - to: default
+        via: 192.168.10.205
+      - to: 10.0.0.0/24
+        via: 10.0.0.205/24
+      nameservers:
+         addresses: [192.168.10.205]
+```
+
+默认路由指向路由器的接口 192.168.10.205
+
+- 路由规则
+```bash
+[root@client ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.10.205  0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        10.0.0.205      255.255.255.0   UG    24     0        0 eth0
+10.0.0.205      0.0.0.0         255.255.255.255 UH    24     0        0 eth0
+192.168.10.0    0.0.0.0         255.255.255.0   U     100    0        0 eth0
+```
+
+## 路由器
+- ubuntu22.04 
+- 一个 NAT 模式网卡，ip 为 10.0.0.205
+- 一个 host-only 模式网卡，ip 为 192.168.10.205
+- 开启 ip_forward
+```bash
+[root@router ~]$ cat /proc/sys/net/ipv4/ip_forward
+0
+[root@router ~]$ vim /etc/sysctl.conf
+```
+编辑 `/etc/sysctl.conf` 文件，取消下面注释，开启 ip_forward
+```bash
+# Uncomment the next line to enable packet forwarding for IPv4
+net.ipv4.ip_forward=1
+```
+让配置生效：
+```bash
+[root@router ~]$ sysctl -p
+net.ipv4.ip_forward = 1
+[root@router ~]$ cat /proc/sys/net/ipv4/ip_forward
+1
+```
+
+- 网卡配置
+```bash
+network:
+  version: 2
+ #renderer: networkd
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      match:
+        name: eth0
+      addresses: 
+      - 10.0.0.205/24
+      routes:
+      - to: default
+        via: 10.0.0.2
+      nameservers:
+         addresses: [10.0.0.2]
+    eth1:
+      match:
+        name: eth1
+      addresses: 
+      - 192.168.10.205/24
+```
+
+- 查看路由规则
+```bash
+[root@router ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.2        0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+192.168.10.0    0.0.0.0         255.255.255.0   U     101    0        0 eth1
+```
+
+## LVS
+- ubuntu 22.04 
+- 一个 NAT 模式网卡，IP 为 10.0.0.206，作为 VIP，与客户端通信
+- 使用 NAT 工作模式进行调度
+- LVS 调度使用 wrr 算法，而后端服务器的权重相同，因此应该是依次轮询调度
+
+正常 LVS 应该配两个网络接口，一个 VIP，对外通信；一个 DIP 对内通信
+但本实验后端服务器在另一个宿主机的容器中，配置网络环境达到一样的效果即可
+客户端无法访问后端服务器，只能访问 LVS 的 VIP，然后 LVS 将客户端的请求调度到后端服务器中
+
+
+### 网络配置
+- 网卡配置
+```bash
+network:
+  version: 2
+ #renderer: networkd
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      match:
+        name: eth0
+      addresses: 
+      - 10.0.0.206/24
+      routes:
+      - to: default
+        via: 10.0.0.2
+      - to: 192.168.10.0/24
+        via: 192.168.10.205/24
+      - to: 172.27.0.0/16
+        via: 10.0.0.208/24
+      nameservers:
+         addresses: [10.0.0.2]
+```
+
+- 路由规则：
+```bash
+[root@lvs-1 ~]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.2        0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+172.27.0.0      10.0.0.208      255.255.0.0     UG    24     0        0 eth0
+192.168.10.0    192.168.10.205  255.255.255.0   UG    24     0        0 eth0
+192.168.10.205  0.0.0.0         255.255.255.255 UH    24     0        0 eth0
+```
+需要加上和后端服务器通信的路由规则，即目标地址为 `172.27.0.0/16` 的路由
+
+
+- 开启 ip_forward
+```bash
+[root@lvs-1 ~]$ cat /proc/sys/net/ipv4/ip_forward
+1
+```
+
+### NAT 工作模式配置
+#### 安装 ipvsadm 命令行工具
+```bash
+[root@lvs-1 ~]$ apt install -y ipvsadm
+```
+
+查看服务的状态：
+```bash
+[root@lvs-1 ~]$ systemctl status ipvsadm.service
+● ipvsadm.service - LSB: ipvsadm daemon
+     Loaded: loaded (/etc/init.d/ipvsadm; generated)
+     Active: active (exited) since Tue 2023-07-04 19:48:02 CST; 1min 59s ago
+       Docs: man:systemd-sysv-generator(8)
+    Process: 3871 ExecStart=/etc/init.d/ipvsadm start (code=exited, status=0/SUCCESS)
+        CPU: 6ms
+
+Jul 04 19:48:02 lvs-1 systemd[1]: Starting LSB: ipvsadm daemon...
+Jul 04 19:48:02 lvs-1 ipvsadm[3871]:  * ipvsadm is not configured to run. Please edit /etc/default/ipvsadm
+Jul 04 19:48:02 lvs-1 systemd[1]: Started LSB: ipvsadm daemon.
+```
+
+
+#### 利用防火墙标记集群服务
+添加 iptables 规则，在 mangle 表上大防火墙标签，将目标地址为 VIP，端口为 80 和 443 的
+数据包都打上防火墙标签，归类为一个集群服务
+
+```bash
+[root@lvs-1 ~]$ iptables -t mangle -A PREROUTING -d 10.0.0.206 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 1
+```
+
+- 保存防火墙规则
+安装 `iptables-persistent` 包来保存 iptables 规则并开机自启
+```bash
+[root@lvs-1 ~]$ apt install -y iptables-persistent
+```
+
+当前已写入的规则自动保存到 `/etc/iptables/rules.v4` 文件中
+```bash
+[root@lvs-1 ~]$ cat /etc/iptables/rules.v4
+# Generated by iptables-save v1.8.7 on Tue Jul  4 20:59:22 2023
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -d 10.0.0.206/32 -p tcp -m multiport --dports 80,443 -j MARK --set-xmark 0x1/0xffffffff
+COMMIT
+# Completed on Tue Jul  4 20:59:22 2023
+```
+
+查看服务状态：
+```bash
+[root@lvs-1 ~]$ systemctl status netfilter-persistent.service
+● netfilter-persistent.service - netfilter persistent configuration
+     Loaded: loaded (/lib/systemd/system/netfilter-persistent.service; enabled; vendor preset: enabled)
+    Drop-In: /etc/systemd/system/netfilter-persistent.service.d
+             └─iptables.conf
+     Active: active (exited) since Tue 2023-07-04 20:59:22 CST; 13min ago
+       Docs: man:netfilter-persistent(8)
+   Main PID: 5116 (code=exited, status=0/SUCCESS)
+        CPU: 4ms
+
+Jul 04 20:59:22 lvs-1 systemd[1]: Starting netfilter persistent configuration...
+Jul 04 20:59:22 lvs-1 netfilter-persistent[5118]: run-parts: executing /usr/share/netfilter-persistent/plugins.d/15-ip4tables sta>
+Jul 04 20:59:22 lvs-1 netfilter-persistent[5119]: Warning: skipping IPv4 (no rules to load)
+Jul 04 20:59:22 lvs-1 netfilter-persistent[5118]: run-parts: executing /usr/share/netfilter-persistent/plugins.d/25-ip6tables sta>
+Jul 04 20:59:22 lvs-1 netfilter-persistent[5120]: Warning: skipping IPv6 (no rules to load)
+Jul 04 20:59:22 lvs-1 systemd[1]: Finished netfilter persistent configuration.
+```
+
+
+#### 添加 ipvs 规则
+```bash
+[root@lvs-1 ~]$ ipvsadm -L
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+[root@lvs-1 ~]$ ipvsadm -A -f 1 -s wrr
+[root@lvs-1 ~]$ ipvsadm -a -f 1 -r 172.27.0.30:80 -m
+[root@lvs-1 ~]$ ipvsadm -a -f 1 -r 172.27.0.31:80 -m
+[root@lvs-1 ~]$ ipvsadm -L
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+FWM  1 wrr
+  -> 172.27.0.30:80               Masq    1      0          0
+  -> 172.27.0.31:80               Masq    1      0          0
+```
+
+#### 查看 ipvs 规则
+```bash
+[root@lvs-1 ~]$ cat /proc/net/ip_vs
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port Forward Weight ActiveConn InActConn
+FWM  00000001 wrr
+  -> AC1B001F:0050      Masq    1      0          0
+  -> AC1B001E:0050      Masq    1      0          0
+```
+
+#### 保存 ipvs 规则
+默认保存到 `/etc/ipvsadm.rules` 文件中
+```bash
+[root@lvs-1 ~]$ service ipvsadm save
+ * Saving IPVS configuration...                                                                                            [ OK ]
+[root@lvs-1 -r 172.27.0.30:80 -m -w 1
+-a -f 1 -r 172.27.0.31:80 -m -w 1
+```
+
+#### 开机自动加载 ipvs 规则
+将下列文件中的 `AUTO` 的值改为 `true`
+```bash
+[root@lvs-1 ~]$ vim /etc/default/ipvsadm
+# ipvsadm
+
+# if you want to start ipvsadm on boot set this to true
+AUTO="true"
+
+# daemon method (none|master|backup)
+DAEMON="none"
+
+# use interface (eth0,eth1...)
+IFACE="eth0"
+
+# syncid to use
+# (0 means no filtering of syncids happen, that is the default)
+# SYNCID="0"
+```
+
+该文件可以通过 `dpkg -L ipvsadm` 查找
+
+## 后端服务器
+- 宿主机为 ubuntu22.04
+- NAT 模式网卡，IP 为 10.0.0.208
+- 后端服务器运行在容器中，包含：
+    - 两个 nginx+php-fpm 提供 web 服务
+    将 web 网页数据和配置文件、日志等做持久化处理，存放在宿主机中
+    两个 web server 的数据共享
+    - 一个 mysql 存放数据
+    - 一个 redis 集群做会话保持（3 个 redis 容器，1主2从，配置哨兵）
+- 容器运行在一个自定义网络中，网段为 172.27.0.0/16 
+
+
+### 创建服务端自定义网络
 - 创建自定义网络 net-server
+两个 nginx server，三个 redis server，mysql server 均在自定义网络中
+运行容器时指定网络和 ip
 
 ```bash
 [root@docker redis]$ docker network create -d bridge --subnet 172.27.0.0/16 --gateway 172.27.0.1 net-server
@@ -42,7 +343,44 @@ d089259c4b6b   net-server   bridge    local
 ```
 
 
-# redis 容器
+
+### 后端服务器的网关指向 LVS
+后端服务器的宿主机网卡配置文件为：
+```bash
+network:
+  version: 2
+ #renderer: networkd
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      match:
+        name: eth0
+      addresses: 
+      - 10.0.0.208/24
+      routes:
+      - to: default
+        via: 10.0.0.206
+      nameservers:
+         addresses: [10.0.0.2]
+```
+注意域名服务器指向 10.0.0.2，否则域名无法解析
+
+
+路由表的路由规则：
+```bash
+[root@docker apt]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.206      0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+172.17.0.0      0.0.0.0         255.255.0.0     U     0      0        0 docker0
+172.17.0.0      0.0.0.0         255.255.0.0     U     426    0        0 docker0
+172.27.0.0      0.0.0.0         255.255.0.0     U     0      0        0 br-455a33a641b6
+172.27.0.0      0.0.0.0         255.255.0.0     U     425    0        0 br-455a33a641b6
+```
+
+
+### redis 容器
 > [redis](https://github.com/docker-library/redis/blob/2e6e8961037d8b2838a4105bb9a761441e1ae477/7.2-rc/alpine/docker-entrypoint.sh)
 
 
@@ -68,23 +406,269 @@ redis-sentinel /usr/local/redis/etc/sentinel.conf
 否则后面的 `redis-sentinel` 不能启动
 
 
-# nginx+php-fpm Web 服务器
+### nginx+php-fpm Web 服务器
+- nginx-1.24.0
+- php82-fpm-8.2.7-r0
+
 nginx+php-fpm 镜像可以用第一个实验的镜像
 但这里运行两个容器，两个容器的数据共享，因此用数据卷容器
 
+启动第一个 nginx 服务器，宿主机相关目录挂载到容器目录中，实现容器的配置文件和数据等持久化
+第二个容器启动时用 `--volumes-from` 和第一个容器共享目录
 
-original content in /etc/apk # cat repositories
-https://dl-cdn.alpinelinux.org/alpine/v3.18/main
-https://dl-cdn.alpinelinux.org/alpine/v3.18/community
+运行时用 `--link` 选项将 mysql 的名字进行解析，需要运行时先运行 mysql 再运行 nginx
+```bash
+docker run -d -p ${PORT_HOST_1}:80 \
+           -v ${PATH_HOST_PREFIX}/nginx/conf:/usr/local/nginx/conf \
+           -v ${PATH_HOST_PREFIX}/nginx/logs:/usr/local/nginx/logs \
+           -v ${PATH_HOST_PREFIX}/php82:/etc/php82  \
+           -v ${PATH_HOST_PREFIX}/data:/data/www  \
+           --name ${name1} \
+           --net ${NEW_NETWORK} --ip ${NGINX_IP[0]} \
+           --link ${MYSQL_NAME} \
+           ${IMG_NGINX}
+```
+
+进入 nginx 容器测试：
+```bash
+/ # ping mysql-01
+PING mysql-01 (172.27.0.20): 56 data bytes
+64 bytes from 172.27.0.20: seq=0 ttl=64 time=0.440 ms
+64 bytes from 172.27.0.20: seq=1 ttl=64 time=0.104 ms
+```
+
+### 配置 php 支持 redis 保存 session
+未成功
+
+#### 支持 session 模块
+- 和第一个实验不同，安装 php-fpm 时，还需安装 `php82-session-8.2.7-r0`
+```bash
+/ # apk search php-session
+php81-session-8.1.20-r0
+php82-session-8.2.7-r0
+```
+
+安装完后查看 session 模块，安装成功应该会显示下面信息：
+```bash
+/ # php-fpm82 -m | grep session
+session
+```
+
+同时在 php 的配置文件中设置 session 的保存路径
+容器中 php 的配置文件的路径为 `/etc/php82/php.ini`，可以在宿主机中挂载的目录中修改
+```bash
+session.save_handler = files
+session.save_path = "/tmp"
+```
+默认第二个保存路径注释了，默认 session 存放为文件的形式
+
+问题：
+在 `/tmp` 目录下没有 session 信息
 
 
-modify with sed command to the following:
+#### 用 redis 存放 session
+未成功
+
+安装扩展模块支持 php 连 redis
+```bash
+/ # apk search php*redis
+php81-pecl-redis-5.3.7-r1
+php82-pecl-redis-5.3.7-r2
+```
+
+修改 php 的配置，session 改为 redis 存放
+容器中的路径为 `/etc/php82/php-fpm.d/www.conf`
+在该配置文件最后添加下面配置，redis 地址改为 redis 哨兵的地址和端口
+```bash
+php_value[session.save_handler]=redis
+php_value[session.save_path]="tcp://172.27.0.10:26379"
+```
 
 
-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.18/main
-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.18/community
-https://dl-cdn.alpinelinux.org/alpine/v3.18/main
-https://dl-cdn.alpinelinux.org/alpine/v3.18/community
+## LVS 和 后端服务器网络连通
+docker 设置一些防火墙规则，容器与外界通信，如不同宿主机通信，对容器的 IP 做了 SNAT 转换
+即容器虽然能与外界通信，出去的地址是宿主机的 IP 而非容器的 IP，类似虚拟机中的宿主机用 NAT
+模式网卡时，与外界通信时 IP 转换为 windows 的IP
+
+可以通过抓包验证：
+在 10.0.0.208 的容器中 ping 10.0.0.205，然后在 10.0.0.205 上抓包
+```bash
+[root@router ~]$ tcpdump -i eth0 -nn icmp and dst host 10.0.0.205
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+
+
+17:10:44.289282 IP 10.0.0.208 > 10.0.0.205: ICMP echo request, id 37, seq 0, length 64
+17:10:45.289814 IP 10.0.0.208 > 10.0.0.205: ICMP echo request, id 37, seq 1, length 64
+```
+可以看到来源的 IP 地址为 10.0.0.208 而非容器的 IP 
+
+而在 10.0.0.205 宿主机直接 ping 容器的 IP 172.27.0.30 无法通信
+
+
+- 安装 docker 后 ip_forward 默认打开
+```bash
+[root@docker redis]$ cat /proc/sys/net/ipv4/ip_forward
+1
+```
+
+### 后端服务器上修改防火墙设置
+在 10.0.0.208 的机器上，修改防火墙设置
+```bash
+iptables -A FORWARD -s 10.0.0.206 -j ACCEPT
+```
+
+对来源为 10.0.0.206 的数据包，全部接收，修改后防火墙规则如下：
+```bash
+[root@docker nginx]$ iptables -vnL
+Chain INPUT (policy ACCEPT 11959 packets, 1548K bytes)
+pkts bytes target     prot opt in     out     source  destination
+
+Chain FORWARD (policy DROP 3 packets, 252 bytes)
+pkts bytes target     prot opt in     out     source  destination
+390K   51M DOCKER-USER  all  --  *      *       0.0.0.0/0  0.0.0.0/0
+390K   51M DOCKER-ISOLATION-STAGE-1  all  --  *      *       0.0.0.0/0  0.0.0.0/0
+0     0 ACCEPT     all  --  *      docker0  0.0.0.0/0  0.0.0.0/0  ctstate RELATED,ESTABLISHED
+0     0 DOCKER     all  --  *      docker0  0.0.0.0/0  0.0.0.0/0
+0     0 ACCEPT     all  --  docker0 !docker0  0.0.0.0/0  0.0.0.0/0
+0     0 ACCEPT     all  --  docker0 docker0  0.0.0.0/0  0.0.0.0/0
+390K   51M ACCEPT     all  --  *      br-455a33a641b6  0.0.0.0/0  0.0.0.0/0  ctstate RELATED,ESTABLISHED
+78  4568 DOCKER     all  --  *      br-455a33a641b6  0.0.0.0/0  0.0.0.0/0
+255 30269 ACCEPT     all  --  br-455a33a641b6 !br-455a33a641b6  0.0.0.0/0  0.0.0.0/0
+36  2160 ACCEPT     all  --  br-455a33a641b6 br-455a33a641b6  0.0.0.0/0    0.0.0.0/0
+4   336 ACCEPT     all  --  *      *       10.0.0.206  0.0.0.0/0
+
+Chain OUTPUT (policy ACCEPT 11871 packets, 1185K bytes)
+ pkts bytes target     prot opt in     out     source  destination
+
+Chain DOCKER (2 references)
+ pkts bytes target     prot opt in     out     source               destination
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.10 tcp dpt:26379
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.10 tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.11 tcp dpt:26379
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.11 tcp dpt:6379
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.12 tcp dpt:26379
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.12 tcp dpt:6379
+   35  1820 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.30 tcp dpt:80
+    0     0 ACCEPT     tcp  --  !br-455a33a641b6 br-455a33a641b6  0.0.0.0/0  172.27.0.31 tcp dpt:80
+
+Chain DOCKER-ISOLATION-STAGE-1 (1 references)
+pkts bytes target     prot opt in     out     source               destination
+0    0 DOCKER-ISOLATION-STAGE-2  all  --  docker0 !docker0  0.0.0.0/0  0.0.0.0/0
+255 30269 DOCKER-ISOLATION-STAGE-2  all  --  br-455a33a641b6 !br-455a33a641b6  0.0.0.0/0  0.0.0.0/0
+390K   51M RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0
+
+Chain DOCKER-ISOLATION-STAGE-2 (2 references)
+pkts bytes target     prot opt in     out     source  destination
+0   0 DROP       all  --  *      docker0  0.0.0.0/0  0.0.0.0/0
+0   0 DROP       all  --  *      br-455a33a641b6  0.0.0.0/0  0.0.0.0/0
+255 30269 RETURN     all  --  *      *       0.0.0.0/0   0.0.0.0/0
+
+Chain DOCKER-USER (1 references)
+pkts bytes target     prot opt in     out     source  destination
+390K   51M RETURN     all  --  *      *       0.0.0.0/0  0.0.0.0/0
+```
+
+当从 10.0.0.206 的 LVS 服务器发送数据包到 10.0.0.208 后端服务器宿主机时，根据路由表的路由规则，
+目的地址为自定义容器的地址，因此转发给自定义网桥 `br-455a33a641b6`
+根据防火墙的 filter 表的 FORWARD 链规则
+```bash
+Chain FORWARD (policy DROP 3 packets, 252 bytes)
+pkts bytes target     prot opt in     out     source  destination
+390K   51M DOCKER-USER  all  --  *      *       0.0.0.0/0  0.0.0.0/0
+390K   51M DOCKER-ISOLATION-STAGE-1  all  --  *      *       0.0.0.0/0  0.0.0.0/0
+0     0 ACCEPT     all  --  *      docker0  0.0.0.0/0  0.0.0.0/0  ctstate RELATED,ESTABLISHED
+0     0 DOCKER     all  --  *      docker0  0.0.0.0/0  0.0.0.0/0
+0     0 ACCEPT     all  --  docker0 !docker0  0.0.0.0/0  0.0.0.0/0
+0     0 ACCEPT     all  --  docker0 docker0  0.0.0.0/0  0.0.0.0/0
+390K   51M ACCEPT     all  --  *      br-455a33a641b6  0.0.0.0/0  0.0.0.0/0  ctstate RELATED,ESTABLISHED
+78  4568 DOCKER     all  --  *      br-455a33a641b6  0.0.0.0/0  0.0.0.0/0
+255 30269 ACCEPT     all  --  br-455a33a641b6 !br-455a33a641b6  0.0.0.0/0  0.0.0.0/0
+36  2160 ACCEPT     all  --  br-455a33a641b6 br-455a33a641b6  0.0.0.0/0    0.0.0.0/0
+4   336 ACCEPT     all  --  *      *       10.0.0.206  0.0.0.0/0
+```
+
+`in` 应为 eth0 网络接口，前面的规则都不匹配，最后一条规则是手动加的，如果没有则用默认策略，即 `DROP`，
+而加了最后一条后，对于来源为 10.0.0.206 的数据包会 `ACCEPT`，因此除了 LVS 服务器，其他地址的包均会丢弃
+
+
+#### 保存防火墙规则并开机自动加载
+安装下面工具
+```bash
+[root@docker data]$ apt install -y iptables-persistent
+```
+
+查看当前保存的规则
+```bash
+[root@docker apt]$ cat /etc/iptables/rules.v4
+```
+
+查看服务状态：
+```bash
+[root@docker apt]$ systemctl status netfilter-persistent.service
+● netfilter-persistent.service - netfilter persistent configuration
+     Loaded: loaded (/lib/systemd/system/netfilter-persistent.service; enabled; vendor preset: enabled)
+    Drop-In: /etc/systemd/system/netfilter-persistent.service.d
+             └─iptables.conf
+     Active: active (exited) since Tue 2023-07-04 22:23:10 CST; 3min 33s ago
+       Docs: man:netfilter-persistent(8)
+   Main PID: 23070 (code=exited, status=0/SUCCESS)
+        CPU: 6ms
+
+Jul 04 22:23:10 docker systemd[1]: Starting netfilter persistent configuration...
+Jul 04 22:23:10 docker netfilter-persistent[23072]: run-parts: executing /usr/share/netfilter-persistent/plugins.d/15-ip4tables start
+Jul 04 22:23:10 docker netfilter-persistent[23073]: Warning: skipping IPv4 (no rules to load)
+Jul 04 22:23:10 docker netfilter-persistent[23072]: run-parts: executing /usr/share/netfilter-persistent/plugins.d/25-ip6tables start
+Jul 04 22:23:10 docker netfilter-persistent[23074]: Warning: skipping IPv6 (no rules to load)
+Jul 04 22:23:10 docker systemd[1]: Finished netfilter persistent configuration.
+```
+
+
+## 客户端验证
+在后端服务器的宿主机 10.0.0.208 上挂载到 web 服务器的目录中添加一个测试文档：
+```bash
+[root@docker data]$ echo "10.0.0.208" > test.html
+[root@docker data]$ cat test.html
+10.0.0.208
+```
+
+客户端通过 curl 访问 LVS 服务器的 test.html 文件
+```bash
+[root@client ~]$ for((i=0;i<4;++i));do curl 10.0.0.206/test.html; sleep 1; done
+10.0.0.208
+10.0.0.208
+10.0.0.208
+10.0.0.208
+```
+
+同时在 10.0.0.208 (后端服务器的宿主机) 抓包，可以看见轮流调度到后端连个服务器上
+```bash
+[root@docker redis]$ tcpdump  -nn tcp port 80  and dst net 172.27.0.0/16
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+
+22:32:44.028875 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [S], seq 2308927033, win 64240, options [mss 1460,sackOK,TS val 51717500 ecr 0,nop,wscale 7], length 0
+22:32:44.030451 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [.], ack 1403329246, win 502, options [nop,nop,TS val 51717502 ecr 1749347118], length 0
+22:32:44.030451 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [P.], seq 0:83, ack 1, win 502, options [nop,nop,TS val 51717502 ecr 1749347118], length 83: HTTP: GET /test.html HTTP/1.1
+22:32:44.031736 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [.], ack 251, win 501, options [nop,nop,TS val 51717504 ecr 1749347120], length 0
+22:32:44.032040 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [.], ack 262, win 501, options [nop,nop,TS val 51717504 ecr 1749347120], length 0
+22:32:44.032436 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [F.], seq 83, ack 262, win 501, options [nop,nop,TS val 51717504 ecr 1749347120], length 0
+22:32:44.033513 IP 192.168.10.204.44632 > 172.27.0.31.80: Flags [.], ack 263, win 501, options [nop,nop,TS val 51717505 ecr 1749347122], length 0
+22:32:45.039746 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [S], seq 3387375546, win 64240, options [mss 1460,sackOK,TS val 51718511 ecr 0,nop,wscale 7], length 0
+22:32:45.040528 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [.], ack 3683269897, win 502, options [nop,nop,TS val 51718512 ecr 2757209003], length 0
+22:32:45.040528 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [P.], seq 0:83, ack 1, win 502, options [nop,nop,TS val 51718512 ecr 2757209003], length 83: HTTP: GET /test.html HTTP/1.1
+22:32:45.041665 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [.], ack 251, win 501, options [nop,nop,TS val 51718513 ecr 2757209004], length 0
+22:32:45.041729 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [.], ack 262, win 501, options [nop,nop,TS val 51718513 ecr 2757209004], length 0
+22:32:45.041771 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [F.], seq 83, ack 262, win 501, options [nop,nop,TS val 51718514 ecr 2757209004], length 0
+22:32:45.042844 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [.], ack 263, win 501, options [nop,nop,TS val 51718514 ecr 2757209005], length 0
+```
+
+# Haproxy 反向代理
+利用 Haproxy 将客户端的请求调度到后端的两个 nginx 服务器上
+
+
+
+
 # 客户端
 
 ## 创建独立网络
