@@ -16,7 +16,7 @@ LNMP-wordpress 搭建博客-02
     haproxy 用容器实现
   
 
-# LVS 代理实验
+# 实验一：单个 LVS 调度
 - win11 上安装 vmware，vmware 中安装 ubuntu22.04 做实验
 - 一个 ubuntu22.04，NAT 模式网卡，IP 10.0.0.208，运行下面容器：
     - 两个 nginx+php-fpm 提供 web 服务
@@ -136,7 +136,6 @@ Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
 正常 LVS 应该配两个网络接口，一个 VIP，对外通信；一个 DIP 对内通信
 但本实验后端服务器在另一个宿主机的容器中，配置网络环境达到一样的效果即可
 客户端无法访问后端服务器，只能访问 LVS 的 VIP，然后 LVS 将客户端的请求调度到后端服务器中
-
 
 ### 网络配置
 - 网卡配置
@@ -662,6 +661,11 @@ listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
 22:32:45.041771 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [F.], seq 83, ack 262, win 501, options [nop,nop,TS val 51718514 ecr 2757209004], length 0
 22:32:45.042844 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [.], ack 263, win 501, options [nop,nop,TS val 51718514 ecr 2757209005], length 0
 ```
+
+
+
+# 实验二：keepalived 调度
+
 
 # Haproxy 反向代理
 利用 Haproxy 将客户端的请求调度到后端的两个 nginx 服务器上
