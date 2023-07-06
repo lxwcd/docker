@@ -27,7 +27,6 @@ PATH_SHARE_DATA="../../../redis"
 clear_noempty_folder ${PATH_SHARE_DATA}
 
 
-
 # init redis data
 is_master=true
 

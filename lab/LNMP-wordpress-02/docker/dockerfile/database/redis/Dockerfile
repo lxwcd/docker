@@ -1,4 +1,10 @@
 FROM alpine-base:3.18-v1
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
 
 LABEL maintainer="lx" \
       description="redis based on alpine" \

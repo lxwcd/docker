@@ -66,5 +66,10 @@ PATH_SHARE_DB_DATA="../../../mysql/data"
 
 reinit $PATH_INIT_DB_DATA $PATH_SHARE_DB_DATA 999 999
 
+# redis data
+. env.sh
+cd ../../database/redis/ > /dev/null
+. init_data.sh
+cd - > /dev/null
 
 #unalias rm
