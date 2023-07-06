@@ -26,15 +26,24 @@ checkImg() {
 }
 
 
-if ! checkImg "${IMG_ALPINE}"; then
-    IMG_ALPINE=${IMG_NAME}
-    if ! source ../../system/alpine/build.sh; then
-        return 1
+# If the run.sh script is called during the creation of the nginx container, 
+# there is no need to fetch the Alpine image again.
+if false; then 
+    if ! checkImg "${IMG_ALPINE}"; then
+        IMG_ALPINE=${IMG_NAME}
+
+        cd ../../system/alpine > /dev/null
+
+
+        if ! source build.sh; then
+            return 1
+        fi
+
+        cd - > /dev/null
     fi
 fi
 
 if ! checkImg "${IMG_REDIS}"; then
-    IMG_NGINX=${IMG_NAME}
     # modify redis Dockerfile 
     sed -i "1s/^/# /; 1s/^/FROM ${IMG_ALPINE}\n/" Dockerfile
 

@@ -1,4 +1,9 @@
-FROM alpine-base:3.18-01
+FROM alpine-base:3.18-v1
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
+# FROM alpine-base:3.18-01
 # FROM alpine-base:3.18-01
 
 LABEL maintainer="lx" \
@@ -39,7 +44,7 @@ RUN set -eux \
     && rm -rf /var/cache/apk/* 
 
 COPY --chown=${UID}:${GID} init_data/  ${PATH_PREFIX}
-COPY entrypoint.sh  /entrypoint.d/
+COPY --chown=${UID}:${GID} entrypoint.sh  /entrypoint.d/
 
 ENTRYPOINT ["/entrypoint.d/entrypoint.sh"]
 #CMD ["cat /etc/issue"]

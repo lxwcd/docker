@@ -1,4 +1,7 @@
-FROM alpine-base:3.18-01
+FROM alpine-base:3.18-v1
+# FROM alpine-base:3.18-v1
+# FROM alpine-base:3.18-v1
+# FROM alpine-base:3.18-v1
 
 LABEL maintainer="lx" \
       description="nginx + php-fpm, based on alpine"
@@ -37,17 +40,18 @@ RUN set -x \
     && ln -sv /usr/local/nginx/sbin/nginx /usr/sbin/ \
     && ln -sf /dev/stdout ${PATH_PREFIX}/logs/access.log \
     && ln -sf /dev/stderr ${PATH_PREFIX}/logs/error.log \
-    && apk del build-base \
     && mkdir -p ${PATH_DATA} && chown -R www:www ${PATH_DATA} \
     && apk add --no-cache php82-fpm=8.2.7-r0 php82-mysqlnd=8.2.7-r0 \
-       php82-common=8.2.7-r0 php82-mysqli=8.2.7-r0 \
+       php82-common=8.2.7-r0 php82-mysqli=8.2.7-r0 php82-mbstring=8.2.7-r0 \
+       php82-exif=8.2.7-r0 php82-session=8.2.7-r0 php82-pecl-redis=5.3.7-r2 \
     && rm -rf ${PATH_TMP} \
-    && rm -rf /var/cache/apk/* 
+    && apk del build-base \
+    && rm -rf /var/cache/apt/* 
 
 COPY --chown=www:www data/  ${PATH_DATA}
 COPY --chown=www:www nginx/conf/  ${PATH_PREFIX}/conf/
 COPY --chown=www:www php82/  ${PATH_PHP_CONF}/
-COPY entrypoint.sh  /entrypoint.d/
+COPY --chown=www:www entrypoint.sh  /entrypoint.d/
 
 EXPOSE 80 
 

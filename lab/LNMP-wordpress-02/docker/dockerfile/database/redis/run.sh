@@ -18,6 +18,12 @@ if ! source init_data.sh; then
     return 1
 fi
 
+# create new network for all severs
+if ! docker network inspect ${NEW_NETWORK} &> /dev/null; then
+    docker network create -d bridge --subnet ${NET_SERVER}  --gateway ${GW_SERVER} ${NEW_NETWORK} &> /dev/null
+    [ $? -gt 0 ] && return 1 || echo "create new network ${NEW_NETWORK}"
+fi
+
 
 # run redis
 cd ../../../redis/
@@ -32,15 +38,17 @@ if [ "${1}" == "-h|--help" ]; then
         or use "redis-" as the default prefix of the container name."
 fi
 
-for ((port=6370; port<637${NODE_NUM}; ++port)); do
+# expose redis-server and redis-sentinel ports
+for ((port=6370,s_port=26370, i=0; port<637${NODE_NUM}; ++port,++s_port,++i)); do
     dir=${PATH_HOST_PREFIX}/node_${port}
     [ -z ${REDIS_NAME} ] && name=redis-$port || name=${REDIS_NAME}-$port 
     
-    docker run -d -p ${port}:${port} \
+    docker run -d -p ${port}:6379 -p ${s_port}:26379 \
                -v ${dir}/data:/usr/local/redis/data \
                -v ${dir}/log:/usr/local/redis/log  \
                -v ${dir}/etc:/usr/local/redis/etc  \
                --name ${name} \
+               --net ${NEW_NETWORK} --ip ${NODES_IP[$i]} \
                ${IMG_REDIS}
 done
 

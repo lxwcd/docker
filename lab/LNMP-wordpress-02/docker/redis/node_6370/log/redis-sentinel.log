@@ -1,0 +1,16 @@
+8:X 04 Jul 2023 11:51:09.700 # oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+8:X 04 Jul 2023 11:51:09.700 # Redis version=7.0.11, bits=64, commit=00000000, modified=0, pid=8, just started
+8:X 04 Jul 2023 11:51:09.700 # Configuration loaded
+8:X 04 Jul 2023 11:51:09.701 * monotonic clock: POSIX clock_gettime
+8:X 04 Jul 2023 11:51:09.702 * Running mode=sentinel, port=26379.
+8:X 04 Jul 2023 11:51:09.729 * Sentinel new configuration saved on disk
+8:X 04 Jul 2023 11:51:09.729 # Sentinel ID is 446690f5f6a69df958e4a16417c29f562bbffdc8
+8:X 04 Jul 2023 11:51:09.729 # +monitor master mymaster 172.27.0.10 6379 quorum 2
+8:X 04 Jul 2023 11:51:12.127 * +sentinel sentinel a04b5d60ebed0ead2aa81aa90a9f927ff7ec67b9 172.27.0.11 26379 @ mymaster 172.27.0.10 6379
+8:X 04 Jul 2023 11:51:12.131 * Sentinel new configuration saved on disk
+8:X 04 Jul 2023 11:51:12.920 * +sentinel sentinel fce29153137a68ff52cfbfe867e93a51f1e38b9b 172.27.0.12 26379 @ mymaster 172.27.0.10 6379
+8:X 04 Jul 2023 11:51:12.922 * Sentinel new configuration saved on disk
+8:X 04 Jul 2023 11:51:19.772 * +slave slave 172.27.0.11:6379 172.27.0.11 6379 @ mymaster 172.27.0.10 6379
+8:X 04 Jul 2023 11:51:19.774 * Sentinel new configuration saved on disk
+8:X 04 Jul 2023 11:51:19.774 * +slave slave 172.27.0.12:6379 172.27.0.12 6379 @ mymaster 172.27.0.10 6379
+8:X 04 Jul 2023 11:51:19.776 * Sentinel new configuration saved on disk

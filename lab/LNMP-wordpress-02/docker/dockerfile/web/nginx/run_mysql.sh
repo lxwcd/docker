@@ -2,13 +2,10 @@
 
 ORIG_DIR=$PWD
 
-cd ../../database/mysql/
+cd ../../database/mysql/ > /dev/null
 
-MYSQL_DIR=$PWD
+. run.sh
 
-
-. run_container.sh
-
-cd ${ORIG_DIR}
+cd ${ORIG_DIR} > /dev/null
 
 
