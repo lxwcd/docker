@@ -662,6 +662,11 @@ listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
 
 
 # 实验二：keepalived 调度
+在实验一的基础上，对 LVS 服务器实现高可用
+
+- 后端服务器，即 10.0.0.208 宿主机上的容器
+
+
 
 
 # Haproxy 反向代理
