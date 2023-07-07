@@ -659,15 +659,350 @@ listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
 22:32:45.042844 IP 192.168.10.204.44644 > 172.27.0.30.80: Flags [.], ack 263, win 501, options [nop,nop,TS val 51718514 ecr 2757209005], length 0
 ```
 
-
+********************************************
 
 # 实验二：keepalived 调度
 在实验一的基础上，对 LVS 服务器实现高可用
 
-- 后端服务器，即 10.0.0.208 宿主机上的容器
+- 后端服务器，即 10.0.0.208 宿主机上的容器不变
+- 新增加一个 LVS 服务器，两个服务器在两个 ubuntu22.04 系统上，安装 keepalived 
+  - lvs-1
+  ubuntu 22.04，NAT 模式网卡，IP 为 10.0.0.206
+  - lvs-2
+  ubuntu 22.04，NAT 模式网卡，IP 为 10.0.0.207
+  - 两个 lvs 对外的 VIP 为 10.0.0.100
+  MASTER/BACKUP 模式，非抢占（nopreempt）
+- 利用 keepalived 的 virtual_server 实现对后端两个 nginx 服务器的调度
+  通过防火墙标签来指定 virtual_server
+- keepalived 配置邮件通知脚本，实现故障等的邮件通知功能
 
 
+## keepalived 实现两个 lvs 高可用
 
+
+### 添加 host-only 模式网卡用于 vrrp 通告
+active 节点会定期发送 vrrp 通告，默认设置用多播地址 224.0.0.18，或则自定义单播地址，
+当 backup 节点未及时收到 vrrp 通告（默认 3 次），则会认为 active 节点出故障，从而选举新的 active 节点
+默认通告时间为 1s
+
+```bash
+[root@lvs-2 ~]$ systemctl status keepalived.service
+● keepalived.service - Keepalive Daemon (LVS and VRRP)
+     Loaded: loaded (/lib/systemd/system/keepalived.service; enabled; vendor preset: enabled)
+     Active: active (running) since Fri 2023-07-07 20:10:17 CST; 18min ago
+   Main PID: 1975 (keepalived)
+      Tasks: 3 (limit: 2178)
+     Memory: 2.3M
+        CPU: 359ms
+     CGroup: /system.slice/keepalived.service
+             ├─1975 /usr/sbin/keepalived --dont-fork -D -S 6
+             ├─1976 /usr/sbin/keepalived --dont-fork -D -S 6
+             └─1977 /usr/sbin/keepalived --dont-fork -D -S 6
+
+Jul 07 20:10:24 lvs-2 Keepalived_healthcheckers[1976]: Removing service [172.27.0.30]:none:80 from VS FWM 100
+Jul 07 20:10:24 lvs-2 Keepalived_healthcheckers[1976]: HTTP_CHECK on service [172.27.0.31]:none:80 failed after 3 retries.
+Jul 07 20:10:24 lvs-2 Keepalived_healthcheckers[1976]: Removing service [172.27.0.31]:none:80 from VS FWM 100
+Jul 07 20:10:24 lvs-2 Keepalived_healthcheckers[1976]: Lost quorum 1-0=1 > 0 for VS FWM 100
+Jul 07 20:10:26 lvs-2 Keepalived_vrrp[1977]: (VI_1) Sending/queueing gratuitous ARPs on eth0 for 10.0.0.100
+Jul 07 20:10:26 lvs-2 Keepalived_vrrp[1977]: Sending gratuitous ARP on eth0 for 10.0.0.100
+Jul 07 20:10:26 lvs-2 Keepalived_vrrp[1977]: Sending gratuitous ARP on eth0 for 10.0.0.100
+Jul 07 20:10:26 lvs-2 Keepalived_vrrp[1977]: Sending gratuitous ARP on eth0 for 10.0.0.100
+Jul 07 20:10:26 lvs-2 Keepalived_vrrp[1977]: Sending gratuitous ARP on eth0 for 10.0.0.100
+Jul 07 20:10:26 lvs-2 Keepalived_vrrp[1977]: Sending gratuitous ARP on eth0 for 10.0.0.100
+```
+
+
+为了不干扰正常业务，也为了安全（vrrp 通告内容未加密，明文），可以单独用一个网卡
+
+添加一个 host-only 模式网卡，因为客户端的宿主机也用 host-only 模式网卡，地址为 192.168.10.204,
+虚拟机中仅主机模式配置的网段为 192.168.10.0/24，因此为了和其他机器隔离，用 192.168.0.0/24 网段
+
+- lvs-1 server 配置 ip 为 192.168.0.206
+```bash
+network:
+  version: 2
+ #renderer: networkd
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      match:
+        name: eth0
+      addresses: 
+      - 10.0.0.206/24
+      routes:
+      - to: default
+        via: 10.0.0.2
+      - to: 192.168.10.0/24
+        via: 192.168.10.205/24
+      - to: 172.27.0.0/16
+        via: 10.0.0.208/24
+      nameservers:
+         addresses: [10.0.0.2]
+    eth1:
+      match:
+        name: eth1
+      addresses: 
+      - 192.168.0.206/24
+```
+
+- lvs-2 server 配置 ip 为 192.168.0.207
+
+
+### 安装 keepalived
+两个 lvs server 均安装 keepalived
+ubuntu22.04 包安装，安装版本为 v2.2.4
+
+```bash
+[root@lvs-1 ~]$ sudo apt update && sudo apt install -y keepalived
+```
+
+### 添加配置文件
+默认安装 keepalived 后无法通过 systemctl 启动，因为缺少配置文件，配置文件可以从自带的 sample 复制到指定位置
+
+- 查看 sample 配置文件
+```bash
+[root@lvs-1 ~]$ dpkg -L keepalived | grep -Ei ".conf"
+/etc/dbus-1/system.d/org.keepalived.Vrrp1.conf
+/usr/share/doc/keepalived/keepalived.conf.SYNOPSIS
+/usr/share/doc/keepalived/samples/keepalived.conf.HTTP_GET.port
+/usr/share/doc/keepalived/samples/keepalived.conf.IPv6
+/usr/share/doc/keepalived/samples/keepalived.conf.PING_CHECK
+/usr/share/doc/keepalived/samples/keepalived.conf.SMTP_CHECK
+/usr/share/doc/keepalived/samples/keepalived.conf.SSL_GET
+/usr/share/doc/keepalived/samples/keepalived.conf.UDP_CHECK
+/usr/share/doc/keepalived/samples/keepalived.conf.conditional_conf
+/usr/share/doc/keepalived/samples/keepalived.conf.fwmark
+/usr/share/doc/keepalived/samples/keepalived.conf.inhibit
+/usr/share/doc/keepalived/samples/keepalived.conf.misc_check
+/usr/share/doc/keepalived/samples/keepalived.conf.misc_check_arg
+/usr/share/doc/keepalived/samples/keepalived.conf.quorum
+/usr/share/doc/keepalived/samples/keepalived.conf.sample
+```
+
+- 查看 keepalived 配置文件的指定位置
+```bash
+[root@lvs-1 ~]$ vim /lib/systemd/system/keepalived.service
+```
+```bash
+[Unit]
+Description=Keepalive Daemon (LVS and VRRP)
+After=network-online.target
+Wants=network-online.target
+# Only start if there is a configuration file
+ConditionFileNotEmpty=/etc/keepalived/keepalived.conf
+
+[Service]
+Type=notify
+# Read configuration variable file if it is present
+EnvironmentFile=-/etc/default/keepalived
+ExecStart=/usr/sbin/keepalived --dont-fork $DAEMON_ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- 根据配置文件路径，将样本配置拷贝到指定位置
+```bash
+[root@lvs-1 ~]$ cp /usr/share/doc/keepalived/samples/keepalived.conf.sample /etc/keepalived/keepalived.conf
+```
+
+- 配置文件设置参数时注意选项所在的位置
+
+
+### 设置全局配置 global_defs
+> 查看 keepalived 配置文件参数：[manpage](https://www.keepalived.org/manpage.html)
+
+- 可以 `man keepalived.conf` 查看配置文件参数说明 
+
+
+修改样本配置文件，全局配置放在 `/etc/keepalived/keepalived.conf` 文件中
+
+```bash
+! Configuration File for keepalived
+
+global_defs {
+   router_id lvs-1
+   vrrp_skip_check_adv_addr
+   ! vrrp_mcast_group4 224.0.0.20
+}
+
+include /etc/keepalived/conf.d/*.conf
+```
+- `router_id` 标识当前 keepalived server，因为 keepalived 通过 VRRP 协议实现 
+high-availability，而 VRRP 最初是为了实现网关的高可用，因此名字为 `router_id`
+- `vrrp_mcast_group4` 为多播地址，keepalived 各节点之间需要发布 VRRP 通告，默认使用
+多播地址 `244.0.0.18`，可以修改，或者改为单播形式，这里不用多播
+
+
+### 配置虚拟路由器 vrrp_instance
+>  A  VRRP  Instance is the VRRP protocol key feature. 
+> It defines and con-figures VRRP behaviour to run on a specific interface.  
+> Each  VRRP  Instance is related to a unique interface.
+
+一个 vrrp_instance 相当于一个业务，这里两个 lvs server 提供一个业务，因此属于一个
+vrrp_instance，该配置可以单独在子文件夹中，即全局配置中包含的路径 `/etc/keepalived/con.d/*.conf`
+
+1. lvs-1 上配置如下
+```bash
+vrrp_instance VI_1 {
+    state BACKUP
+    interface eth1
+    nopreempt
+    virtual_router_id 100
+    priority 100
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass Byxf885j
+    }
+    virtual_ipaddress {
+        10.0.0.100/24 dev eth0 label eth0:1
+    }
+    unicast_src_ip 192.168.0.206
+    unicast_peer {
+       192.168.0.207
+    }
+}
+```
+- state 
+可以为 `MASTER|BACKUP`，如果为 `MASTER`，且优先级 priority 比 `BACKUP` 节点高，
+则当主节点出故障， vip 漂移到从节点后，主节点又恢复，则会抢回 vip，即使设置非抢占 `nopreempt` 模式
+
+本实验中使用非抢占模式，因为抢占后 vip 变化会引起抖动，客户端原先已经存了之前 vip 的 mac 地址，又要
+变更 mac 地址
+
+使用非抢占模式，即设置 `nopreempt`，则两个 lvs server 设置的状态都为 `BACKUP`，而优先级设置不同
+
+
+- interface
+vrrp 通告用的网络接口，这里用 host-only 模式的网卡，即 eth1
+
+- nopreempt
+非抢占模式
+
+- priority
+优先级高的在选举 master 的会当选为 master
+优先级的范围为 1-255
+
+但在最开始开启 keepalived 服务时，如果优先级低的节点先开启服务，则会成为 active server 得到 vip
+
+- advert_int
+vrrp 通告时间间隔，默认 1s，可以修改
+
+- authentication 
+用于认证身份，但该功能已经在 VRRPv2 中被移除，除非配置单播时仍可使用
+
+```bash
+# Note: authentication was removed from the VRRPv2 specification by
+# RFC3768 in 2004.
+#   Use of this option is non-compliant and can cause problems; avoid
+#   using if possible, except when using unicast, where it can be helpful.
+authentication {
+    # PASS|AH
+    # PASS - Simple password (suggested)
+    # AH - IPSEC (not recommended))
+    auth_type PASS
+
+    # Password for accessing vrrpd.
+    # should be the same on all machines.
+    # Only the first eight (8) characters are used.
+    auth_pass 1234
+}
+```
+
+- virtual_ipaddress
+即 virtual_instance 的 VIP 地址，可以配置多个，这里就用一个地址，客户端访问的地址
+该地址绑定在 eth0 NAT 模式的网卡上，相当于在 eth0 网卡上增加一个网卡接口，设置一个别名
+
+```bash
+[root@lvs-1 conf.d]$ ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 00:0c:29:fb:90:06 brd ff:ff:ff:ff:ff:ff
+    altname enp2s1
+    altname ens33
+    inet 10.0.0.206/24 brd 10.0.0.255 scope global noprefixroute eth0
+       valid_lft forever preferred_lft forever
+    inet 10.0.0.100/24 scope global secondary eth0:1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::20c:29ff:fefb:9006/64 scope link
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 00:0c:29:fb:90:10 brd ff:ff:ff:ff:ff:ff
+    altname enp2s5
+    altname ens37
+    inet 192.168.0.206/24 brd 192.168.0.255 scope global noprefixroute eth1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::20c:29ff:fefb:9010/64 scope link
+       valid_lft forever preferred_lft forever
+```
+
+- unicast_src_ip and unicast_peer
+用于配置单播，unicast_src_ip 为发送通告的源地址，这里为本主机 eth1 网卡的地址
+unicast_peer 为一个 vrrp_instance 中其他节点的接收 vrrp 通告的地址，这里只有
+两个节点，因此为另一个 lvs server 的 eth1 地址，即 192.168.0.207
+ 
+
+2. lvs-2 配置
+```bash
+vrrp_instance VI_1 {
+    state BACKUP
+    interface eth1
+    nopreempt
+    virtual_router_id 100
+    priority 80
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass Byxf885j
+    }
+    virtual_ipaddress {
+        10.0.0.100/24 dev eth0 label eth0:1
+    }
+    unicast_src_ip 192.168.0.207
+    unicast_peer {
+       192.168.0.206
+    }
+}
+```
+
+- 注意 virtual_router_id 和 lvs-1 一致，因为属于一个集群
+- authentication 的密码配置也要和 lvs-1 相同
+- virtual_ipaddress 也和 lvs-1 相同
+- unicast_src_ip 为本机 eth1 网卡的 ip，即 192.168.0.207
+- unicast_peer 为 lvs-1 eth1 网卡的 ip，即 192.168.0.206
+
+## keepalived 配置后端 nginx 调度
+### 防火墙打标签 
+实验一中已经打过防火墙标签，这里需要替换原来的标签
+
+实验一的防火墙标签设置：
+```bash
+[root@lvs-1 ~]$ iptables -t mangle -A PREROUTING -d 10.0.0.206 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 1
+```
+
+查看 mangle 表的 PREROUTING 链的规则，通过 `--line-number` 显示序号，替换该规则的目标 ip 地址为 VIP 地址
+
+```bash
+[root@lvs-1 conf.d]$ iptables -t mangle -L PREROUTING -nv --line-number
+```
+
+替换规则，这里只有原来加的一条规则，因此序号为 1
+```bash
+iptables -t mangle -R PREROUTING 1 -i eth0 -d 10.0.0.100 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 100
+```
+
+前面实验已经安装过 `iptables-persistent`，因此规则会自动永久保存
+
+
+## keepalived 日志单独保存
+默认 keepalived 没有单独的日志，日志在 ``
 
 # Haproxy 反向代理
 利用 Haproxy 将客户端的请求调度到后端的两个 nginx 服务器上
