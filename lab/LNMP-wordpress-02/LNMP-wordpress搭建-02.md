@@ -978,29 +978,6 @@ vrrp_instance VI_1 {
 - unicast_src_ip 为本机 eth1 网卡的 ip，即 192.168.0.207
 - unicast_peer 为 lvs-1 eth1 网卡的 ip，即 192.168.0.206
 
-## keepalived 配置后端 nginx 调度
-### 防火墙打标签 
-实验一中已经打过防火墙标签，这里需要替换原来的标签
-
-实验一的防火墙标签设置：
-```bash
-[root@lvs-1 ~]$ iptables -t mangle -A PREROUTING -d 10.0.0.206 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 1
-```
-
-查看 mangle 表的 PREROUTING 链的规则，通过 `--line-number` 显示序号，替换该规则的目标 ip 地址为 VIP 地址
-
-```bash
-[root@lvs-1 conf.d]$ iptables -t mangle -L PREROUTING -nv --line-number
-```
-
-替换规则，这里只有原来加的一条规则，因此序号为 1
-```bash
-iptables -t mangle -R PREROUTING 1 -i eth0 -d 10.0.0.100 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 100
-```
-
-前面实验已经安装过 `iptables-persistent`，因此规则会自动永久保存
-
-
 ## keepalived 日志单独保存
 默认 keepalived 没有单独的日志，日志在系统日志 `/var/log/syslog` 文件中，可以指定单独日志文件
 
@@ -1075,6 +1052,168 @@ local6.info           /var/log/keepalived.log
 ```bash
 [root@lvs-2 ~]$ systemctl restart rsyslog.service
 ```
+
+
+## keepalived 配置后端 nginx 调度
+### 防火墙打标签 
+实验一中已经打过防火墙标签，这里需要替换原来的标签
+
+实验一的防火墙标签设置：
+```bash
+[root@lvs-1 ~]$ iptables -t mangle -A PREROUTING -d 10.0.0.206 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 1
+```
+
+查看 mangle 表的 PREROUTING 链的规则，通过 `--line-number` 显示序号，替换该规则的目标 ip 地址为 VIP 地址
+
+```bash
+[root@lvs-1 conf.d]$ iptables -t mangle -L PREROUTING -nv --line-number
+```
+
+替换规则，这里只有原来加的一条规则，因此序号为 1
+```bash
+iptables -t mangle -R PREROUTING 1 -i eth0 -d 10.0.0.100 -p tcp -m multiport --dports 80,443 -j MARK --set-mark 100
+```
+
+前面实验已经安装过 `iptables-persistent`，因此这里修改规则后将新规则保存到 `/etc/iptables/rule.v4` 文件中，
+下次开机将自动加载新的规则
+```bash
+[root@lvs-2 keepalived]$ iptables-save > /etc/iptables/rules.v4
+```
+
+
+### 配置后端 nginx 服务器调度 
+通过 virtual_server 配置 IPVS 集群，可以设置调度算法等，类似用 ipvsadm 创建的规则
+可以通过 `man keepalived.conf` 查看配置，部分内容如下：
+
+```bash
+Virtual server(s)
+  A virtual_server can be a declaration of one of <IPADDR> [<PORT>] , fwmark <INTEGER> or group <STRING>
+
+  The syntax for virtual_server is :
+
+  virtual_server <IPADDR> [<PORT>]  |
+  virtual_server fwmark <INTEGER> |
+  virtual_server group <STRING> {
+      # LVS scheduler
+      lvs_sched rr|wrr|lc|wlc|lblc|sh|mh|dh|fo|ovf|lblcr|sed|nq
+
+      # Enable flag-1 for scheduler (-b flag-1 in ipvsadm)
+      flag-1
+      # Enable flag-2 for scheduler (-b flag-2 in ipvsadm)
+      flag-2
+      # Enable flag-3 for scheduler (-b flag-3 in ipvsadm)
+      flag-3
+      # Enable sh-port for sh scheduler (-b sh-port in ipvsadm)
+      sh-port
+      # Enable sh-fallback for sh scheduler  (-b sh-fallback in ipvsadm)
+      sh-fallback
+      # Enable mh-port for mh scheduler (-b mh-port in ipvsadm)
+      mh-port
+      # Enable mh-fallback for mh scheduler  (-b mh-fallback in ipvsadm)
+      mh-fallback
+      # Enable One-Packet-Scheduling for UDP (-o in ipvsadm)
+      ops
+```
+
+前面已经打过防火墙标签了，因此可以通过 fwmark 指定设置的防火墙标签 100
+```bash
+virtual_server fwmark 100 {
+    delay_loop 6
+    lb_algo wrr
+    lb_kind NAT
+    persistence_timeout 50
+    protocol TCP
+
+    real_server 172.27.0.30 80 {
+        weight 1
+        HTTP_GET {
+            url {
+              path /index.html
+              status_code 200
+            }
+            connect_timeout 3
+            retry 3
+            delay_before_retry 3
+        }
+    }
+
+    real_server 172.27.0.31 80 {
+        weight 1
+        HTTP_GET {
+            url {
+              path /index.html
+              status_code 200
+            }
+            connect_timeout 3
+            retry 3
+            delay_before_retry 3
+        }
+    }
+}
+```
+`real_server` 指定后端服务器的地址，即 10.0.0.208 服务器的两个 nginx 容器
+
+keepalived 可以对后端服务器进行主动健康性检测，检测的方法可以用七层和四层的方式，
+这里用七层的方式，即通过 `HTTP_GET` 方式，通过访问指定 url 文件，检测返回的状态码
+
+如果用四层检测，用 `TCP_CHECK` 方式，指定 ip 和端口
+
+- 设置好后重启 keepalived 服务，可以通过 ipvsadm 查看 ipvs 规则
+当两个 nginx server 都启动运行时，查看 ipvsadm 规则如下：
+```bash
+[root@lvs-1 keepalived]$ ipvsadm -Ln
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+FWM  1 wrr
+  -> 172.27.0.30:80               Masq    1      0          0
+  -> 172.27.0.31:80               Masq    1      0          0
+FWM  100 wrr persistent 50
+```
+
+将其中一个 nginx 容器删除后，再次查看，无该服务器的调度规则
+```bash
+[root@lvs-1 keepalived]$ ipvsadm -Ln
+IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+FWM  100 wrr persistent 50
+  -> 172.27.0.31:80               Masq    1      0          0
+```
+
+
+## 客户端连接测试
+客户端为单独一个 ubuntu22.04 主机，ip 为 192.16.10.204，和实验一相同
+
+### 客户端通过 curl 访问 nginx 服务器
+```bash
+[root@client ~]$ curl 10.0.0.100/index.html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+html { color-scheme: light dark; }
+body { width: 35em; margin: 0 auto;
+font-family: Tahoma, Verdana, Arial, sans-serif; }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+```
+
+### 抓包查看具体访问的 nginx 服务器 ip
 
 
 # Haproxy 反向代理
