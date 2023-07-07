@@ -1002,7 +1002,80 @@ iptables -t mangle -R PREROUTING 1 -i eth0 -d 10.0.0.100 -p tcp -m multiport --d
 
 
 ## keepalived 日志单独保存
-默认 keepalived 没有单独的日志，日志在 ``
+默认 keepalived 没有单独的日志，日志在系统日志 `/var/log/syslog` 文件中，可以指定单独日志文件
+
+### 查看 service 文件
+```bash
+[Unit]
+Description=Keepalive Daemon (LVS and VRRP)
+After=network-online.target
+Wants=network-online.target
+# Only start if there is a configuration file
+ConditionFileNotEmpty=/etc/keepalived/keepalived.conf
+
+[Service]
+Type=notify
+# Read configuration variable file if it is present
+EnvironmentFile=-/etc/default/keepalived
+ExecStart=/usr/sbin/keepalived --dont-fork $DAEMON_ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+```
+启动时可以指定参数到环境变量 `$DAEMON_ARGS`，环境变量文件在 `/etc/default/keepalived` 文件中
+初始该文件中环境变量没有参数
+```bash
+# Options to pass to keepalived
+
+# DAEMON_ARGS are appended to the keepalived command-line
+DAEMON_ARGS=""
+```
+
+### 查看 keepalived 参数
+`man keepalived` 查看其支持的参数
+
+```bash
+-D, --log-detail
+    Detailed log messages.
+
+-S, --log-facility={0-7|local{0-7}|user|daemon}
+    Set syslog facility to LOG_LOCAL[0-7], LOG_USER or LOG_DAEMON.  The default syslog facility is LOG_DAEMON.
+```
+因此可以设置 `-D` 显示详细的日志信息，通过 `-S` 指定 log facility，即日志类别，如指定未被使用的 6 
+```bash
+DAEMON_ARGS="-D -S 6"
+```
+
+- 修改配置后重新加载配置并重启服务
+```bash
+[root@lvs-1 rsyslog.d]$ systemctl daemon-reload
+[root@lvs-1 rsyslog.d]$ systemctl restart rsyslog.service
+```
+
+### 修改 rsyslog 日志文件配置
+默认的 rsyslog 日志文件的配置在 `/etc/rsyslog.d` 目录下，默认配置为 `50-default.conf`
+
+```bash
+[root@lvs-1 conf.d]$ cd /etc/rsyslog.d/
+[root@lvs-1 rsyslog.d]$ ls
+20-ufw.conf  21-cloudinit.conf  50-default.conf  51-custom.conf  postfix.conf
+```
+
+可以将自定义设置放在自定义文件 `51-custom.conf` 文件中，该文件为自己创建的文件，通过
+前面的数字可以指定调用生效的顺序，在 `/etc/rsyslog.conf` 文件中包含了 `/etc/rsyslog.d/*.conf`
+因此，该目录下以 `.conf` 结尾的文件都会被调用
+
+定义规则如下：
+```bash
+local6.info           /var/log/keepalived.log
+```
+
+修改 rsyslog 规则后重启服务
+```bash
+[root@lvs-2 ~]$ systemctl restart rsyslog.service
+```
+
 
 # Haproxy 反向代理
 利用 Haproxy 将客户端的请求调度到后端的两个 nginx 服务器上
