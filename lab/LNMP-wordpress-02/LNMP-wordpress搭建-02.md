@@ -37,6 +37,13 @@ listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
 16:35:06.475184 IP 10.0.0.100.80 > 192.168.10.204.60112: Flags [S.], seq 992418820, ack 581816800, win 65160, options [mss 1460,sackOK,TS val 3709601076 ecr 1142069726,nop,wscale 7], length 0
 ```
 
+
+实验二示意图如下：
+![](img/2023-07-08-18-03-34.png)
+
+实验一的 lvs 只有上图中的 lvs-1
+
+
 # <font color=red>实验问题</font>
 - php-fpm 的 session 看不到
 session 信息保存到文件中也看不到？
