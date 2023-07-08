@@ -19,6 +19,38 @@ LNMP-wordpress 搭建博客-02
 - 容器中的 nginx，mysql，redis 等的端口可以不用曝露，但为了测试运行容器时将端口曝露
 正常端口应该不曝露，客户端访问反向代理的 IP 和端口，再调度到后端服务器
 
+- lvs 调度后端 nginx 服务器用的 NAT 模式
+在后端服务器 10.0.0.208 上抓包可以看到数据包来源 ip 为客户端 ip 192.168.10.204
+```bash
+[root@docker ~]$ tcpdump -nn tcp port 80 and src host 192.168.10.204 and dst net 172.27.0.0/16
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+16:33:26.083899 IP 192.168.10.204.51624 > 172.27.0.31.80: Flags [S], seq 2761002142, win 64240, options [mss 1460,sackOK,TS val 1141969744 ecr 0,nop,wscale 7], length 0
+```
+
+在客户端 192.168.10.204 上抓包可以看到数据包返回的 ip 为 lvs 的 vip 地址
+```bash
+[root@client ~]$ tcpdump -nn -i eth0 tcp and src net 10.0.0.0/24
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+
+16:35:06.475184 IP 10.0.0.100.80 > 192.168.10.204.60112: Flags [S.], seq 992418820, ack 581816800, win 65160, options [mss 1460,sackOK,TS val 3709601076 ecr 1142069726,nop,wscale 7], length 0
+```
+
+# <font color=red>实验问题</font>
+- php-fpm 的 session 看不到
+session 信息保存到文件中也看不到？
+
+- redis 无法做会话保持
+见下面 redis 部分说明
+
+- 实验二中浏览器跨域访问问题
+客户端 192.168.10.204 用 curl 命令访问正常
+windows 主机上用  curl 和网页浏览器通过反向代理 lvs 的 VIP 10.0.0.100 访问
+windows 主机和网页浏览器可以访问后端服务器的宿主机 10.0.0.208:8080 或 10.0.0.208:8081
+
+
+
 # 实验一：单个 LVS 调度
 - win11 上安装 vmware，vmware 中安装 ubuntu22.04 做实验
 - 一个 ubuntu22.04，NAT 模式网卡，IP 10.0.0.208，运行下面容器：
@@ -1156,6 +1188,7 @@ virtual_server fwmark 100 {
 }
 ```
 - `real_server` 指定后端服务器的地址，即 10.0.0.208 服务器的两个 nginx 容器
+- `persistence_timeout` 定义多长时间内将请求都调度到同一个后端服务器上，即持久连接时长，单位 s
 
 keepalived 可以对后端服务器进行主动健康性检测，检测的方法可以用七层和四层的方式，
 这里用七层的方式，即通过 `HTTP_GET` 方式，通过访问指定 url 文件，检测返回的状态码
@@ -1292,6 +1325,102 @@ Commercial support is available at
 ```
 
 ### 抓包查看具体访问的 nginx 服务器 ip
+- 在后端服务器的宿主机上抓包
+```bash
+[root@docker ~]$ tcpdump -nn tcp port 80 and src host 192.168.10.204 and dst net 172.27.0.0/16
+```
+客户端地址为  192.168.10.204
+
+
+- 客户端通过 curl 命令访问
+```bash
+[root@client ~]$ for((i=0;i<4;++i));do curl -I 10.0.0.100/index.html; sleep 1; done
+```
+
+注意前面做了 50 秒的持久连接，因此抓包看到短时间内都是只调度到一个服务器上
+
+将前面 virtual_server 中持久化设置注释，则可以看到后端服务器轮流提供服务
+```bash
+virtual_server fwmark 100 {
+    delay_loop 6
+    lb_algo wrr
+    lb_kind NAT
+    ! persistence_timeout 50
+    protocol TCP
+
+    real_server 172.27.0.30 80 {
+        weight 1
+        HTTP_GET {
+            url {
+              path /index.html
+              status_code 200
+            }
+            connect_timeout 3
+            retry 3
+            delay_before_retry 3
+        }
+    }
+
+    real_server 172.27.0.31 80 {
+        weight 1
+        HTTP_GET {
+            url {
+              path /index.html
+              status_code 200
+            }
+            connect_timeout 3
+            retry 3
+            delay_before_retry 3
+        }
+    }
+}
+```
+修改后重新加载配置文件 `systemctl reload keepalived.service` 使其生效
+
+## <font color=red>浏览器访问是跨域问题</font>
+客户端 192.168.10.204 通过 curl 命令访问 ip 能正常访问，但在本机 windows 上访问
+vip 10.0.0.100 失败，但直接访问后端服务器的宿主机地址和端口（nginx 容器做了端口曝露）10.0.0.208:8080
+能访问成功
+
+通过 F12 可以查看失败提示，`Referrer Policy: strict-origin-when-cross-origin`
+
+
+- 跨域问题解释：[跨源资源共享（CORS）](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/CORS)
+
+- 跨域问题解决方案：
+[How do I add Access-Control-Allow-Origin in NGINX?](https://serverfault.com/questions/162429/how-do-i-add-access-control-allow-origin-in-nginx)
+[Nginx配置跨域请求 Access-Control-Allow-Origin *](https://segmentfault.com/a/1190000012550346)
+
+
+添加头部信息用到模块 [ngx_http_headers_module](https://nginx.org/en/docs/http/ngx_http_headers_module.html)
+该模块不用额外编译添加，直接可以使用，利用 `add_header` 添加头部信息
+
+宿主机的目录挂载到容器中对配置文件做持久化，从宿主机中修改 nginx 配置文件
+```bash
+add_header Access-Control-Allow-Origin * always;
+```
+将上述指令添加到 http 指令块中
+
+进入容器中，执行 `nginx -s reload` 重新加载配置文件
+
+
+结果：
+windows 主机上用  curl 和网页浏览器通过反向代理 lvs 的 VIP 10.0.0.100 访问
+windows WSL 上用 curl 访问：
+```bash
+lx@LAPTOP-VB238NKA:~$ curl 10.0.0.100/index.html
+curl: (7) Failed to connect to 10.0.0.100 port 80: Connection refused
+```
+网页浏览器访问：
+```bash
+Request URL: http://10.0.0.100/index.html
+Referrer Policy: strict-origin-when-cross-origin
+```
+
+windows 主机和网页浏览器可以访问后端服务器的宿主机 10.0.0.208:8080 或 10.0.0.208:8081
+
+
+
 
 
 # Haproxy 反向代理
