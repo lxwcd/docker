@@ -16,6 +16,8 @@ LNMP-wordpress 搭建博客-02
     - 方案二：用 haproxy 做反向代理调度，并用 keepalived 实现高可用
     haproxy 用容器实现
   
+- 容器中的 nginx，mysql，redis 等的端口可以不用曝露，但为了测试运行容器时将端口曝露
+正常端口应该不曝露，客户端访问反向代理的 IP 和端口，再调度到后端服务器
 
 # 实验一：单个 LVS 调度
 - win11 上安装 vmware，vmware 中安装 ubuntu22.04 做实验
@@ -1082,6 +1084,8 @@ iptables -t mangle -R PREROUTING 1 -i eth0 -d 10.0.0.100 -p tcp -m multiport --d
 
 
 ### 配置后端 nginx 服务器调度 
+
+#### 配置后端服务器的调度规则
 通过 virtual_server 配置 IPVS 集群，可以设置调度算法等，类似用 ipvsadm 创建的规则
 可以通过 `man keepalived.conf` 查看配置，部分内容如下：
 
@@ -1151,14 +1155,21 @@ virtual_server fwmark 100 {
     }
 }
 ```
-`real_server` 指定后端服务器的地址，即 10.0.0.208 服务器的两个 nginx 容器
+- `real_server` 指定后端服务器的地址，即 10.0.0.208 服务器的两个 nginx 容器
 
 keepalived 可以对后端服务器进行主动健康性检测，检测的方法可以用七层和四层的方式，
 这里用七层的方式，即通过 `HTTP_GET` 方式，通过访问指定 url 文件，检测返回的状态码
 
 如果用四层检测，用 `TCP_CHECK` 方式，指定 ip 和端口
 
-- 设置好后重启 keepalived 服务，可以通过 ipvsadm 查看 ipvs 规则
+
+#### 修改 ipvs 规则并保存
+- 实验一中已经通过 ipvsadm 设置过调度规则，需要先清除原来的规则
+```bash
+[root@lvs-1 keepalived]$ ipvsadm -C
+```
+
+- 重启 keepalived 服务，可以通过 ipvsadm 查看 ipvs 规则
 当两个 nginx server 都启动运行时，查看 ipvsadm 规则如下：
 ```bash
 [root@lvs-1 keepalived]$ ipvsadm -Ln
@@ -1171,7 +1182,16 @@ FWM  1 wrr
 FWM  100 wrr persistent 50
 ```
 
-将其中一个 nginx 容器删除后，再次查看，无该服务器的调度规则
+- 将新的规则保存到 `/etc/ipvsadm.rules` 文件中
+前面安装过 `iptables-persistent` 工具，可以通过命令保存新的规则
+```bash
+[root@lvs-1 keepalived]$ service ipvsadm save
+ * Saving IPVS configuration...   
+```
+保存后重新时新的规则生效
+
+
+- 将其中一个 nginx 容器删除后，再次查看，无该服务器的调度规则
 ```bash
 [root@lvs-1 keepalived]$ ipvsadm -Ln
 IP Virtual Server version 1.2.1 (size=4096)
@@ -1179,6 +1199,64 @@ Prot LocalAddress:Port Scheduler Flags
   -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
 FWM  100 wrr persistent 50
   -> 172.27.0.31:80               Masq    1      0          0
+```
+
+## 后端服务器路由和防火墙规则修改
+实验一中将后端服务器的宿主机 10.0.0.208 的网关指向 lvs 的 vip，这里需要修改为 10.0.0.100
+同样防火墙规则中的 ip 地址也需要修改为新的 vip 地址 10.0.0.100
+
+- 修改网卡配置文件
+```bash
+network:
+  version: 2
+ #renderer: networkd
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      match:
+        name: eth0
+      addresses:
+      - 10.0.0.208/24
+      routes:
+      - to: default
+        via: 10.0.0.100
+      nameservers:
+         addresses: [10.0.0.2]
+```
+修改后用 `netplan apply` 使其生效，查看路由规则
+```bash
+[root@docker nginx]$ route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         10.0.0.100      0.0.0.0         UG    100    0        0 eth0
+10.0.0.0        0.0.0.0         255.255.255.0   U     100    0        0 eth0
+172.17.0.0      0.0.0.0         255.255.0.0     U     0      0        0 docker0
+172.27.0.0      0.0.0.0         255.255.0.0     U     0      0        0 br-455a33a641b6
+172.27.0.0      0.0.0.0         255.255.0.0     U     425    0        0 br-455a33a641b6
+``` 
+
+- 替换原来的防火墙规则
+查看原来的规则
+```bash
+[root@docker nginx]$ iptables -t filter -L FORWARD -n --line-number
+Chain FORWARD (policy DROP)
+num  target     prot opt source               destination
+1    DOCKER-USER  all  --  0.0.0.0/0            0.0.0.0/0
+2    DOCKER-ISOLATION-STAGE-1  all  --  0.0.0.0/0            0.0.0.0/0
+3    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+4    DOCKER     all  --  0.0.0.0/0            0.0.0.0/0
+5    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0
+6    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0
+7    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+8    DOCKER     all  --  0.0.0.0/0            0.0.0.0/0
+9    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0
+10   ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0
+11   ACCEPT     all  --  10.0.0.206           0.0.0.0/0
+```
+
+替换规则：
+```bash
+[root@docker nginx]$ iptables -t filter -R FORWARD 11 -s 10.0.0.100 -j ACCEPT
 ```
 
 
