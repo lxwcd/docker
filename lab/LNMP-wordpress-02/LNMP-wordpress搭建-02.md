@@ -1430,11 +1430,132 @@ windows 主机和网页浏览器可以访问后端服务器的宿主机 10.0.0.2
 
 
 
-# Haproxy 反向代理
+# 实验三 Haproxy 反向代理
 利用 Haproxy 将客户端的请求调度到后端的两个 nginx 服务器上
 
 
 
+# 实验四 ELK 收集日志
+- nginx 服务器所在的宿主机 10.0.0.208 上安装 filebeat，来收集日志
+- filebeat 收集的日志发送到实验二中的 redis 集群中做缓存
+redis 还是用实验二中配置的一主两从，配置时将三个 redis 的地址都写上
+
+
+## 安装 filebeat
+
+- 下载镜像安装包
+> [filebeat](https://mirrors.tuna.tsinghua.edu.cn/elasticstack/apt/8.x/pool/main/f/filebeat/)
+
+- 安装
+```bash
+[root@docker src]$ ls
+filebeat-8.8.2-amd64.deb  
+[root@docker src]$ dpkg -i filebeat-8.8.2-amd64.deb
+```
+
+- filebeat 和 elasticsearch 都用相同的版本 8.8.2
+
+
+## 修改 nginx 日志格式
+将 nginx 的访问日志改为 JSON 格式，错误日志保留原来格式
+nginx 日志做了持久化处理
+
+修改 nginx 配置文件中的访问日志的格式：
+```bash
+log_format access_json escape=json '{'
+    '"@timestamp": "$time_iso8601",'
+    '"remote_addr": "$remote_addr",'
+    '"request_method": "$request_method",'
+    '"request_uri": "$request_uri",'
+    '"status": "$status",'
+    '"body_bytes_sent": "$body_bytes_sent",'
+    '"http_referer": "$http_referer",'
+    '"http_user_agent": "$http_user_agent"'
+'}';
+access_log  logs/access_json.log;  
+```
+
+## 配置 filebeat 收集 nginx 的日志
+> [filestream input](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-input-filestream.html)
+
+修改 filebeat.yml 文件：
+
+- 输入为 filestream 类型
+```bash
+filebeat.inputs:
+# filestream is an input for collecting log messages from files.
+- type: filestream
+  # Unique ID among all inputs, an ID is required.
+  id: nginx-access-log
+  # Change to true to enable this input configuration.
+  enabled: true
+  # Paths that should be crawled and fetched. Glob based paths.
+  paths:
+    - /docker-02/web/nginx/logs/access_json.log
+  tags: ["nginx-access"]
+  parsers:
+    - ndjson:
+      target: ""
+      add_error_key: true
+      message_key: log
+
+- type: filestream
+  id: nginx-error-log
+  enabled: true
+  paths:
+    - /docker-02/web/nginx/logs/error.log
+  tags: ["nginx-error"]
+  parsers:
+    - ndjson:
+      target: ""
+      add_error_key: true
+      message_key: log
+```
+
+- 输出到 redis 
+> [Configure the Redis output](https://www.elastic.co/guide/en/beats/filebeat/current/redis-output.html)
+
+```bash
+# ------------------------------ Redis Output -------------------------------
+output.redis:
+  hosts: 
+    - "10.0.0.208:6370"
+    - "10.0.0.208:6371"
+    - "10.0.0.208:6372"
+  password: "123456"
+  db: 0
+  timeout: 5
+  key: "nginx"
+  keys:
+    - key: "nginx_access"   
+      when.contains:
+        tags: "nginx_access"
+    - key: "nginx_error"  
+      when.contains:
+        tags: "nginx_error"
+```
+
+问题：上面想根据日志的 tags 来设置不同的 Key，但设置失败，最终 redis 中只有一个 Key "nginx"
+
+## 测试 redis 接收日志
+- 共有三个 redis 容器，配置哨兵，分别进入三个 redis 容器中查看
+```bash
+127.0.0.1:6379> keys nginx
+1) "nginx"
+127.0.0.1:6379> LLEN nginx
+(integer) 13
+```
+可以通过 `info replication` 查看各节点状态，最初一个 master，两个 slave
+从节点配置只读，因此 filebeat 会找到 master 节点写入再同步到 slave 节点
+
+- 用 `docker stop` 命令将 master 节点的 redis 容器停止
+通过访问 nginx 网页，查看两外两个 slave 节点中的一个变为 master，数据写入到 redis 不受影响
+
+- 用 `docker start` 命令将之前停止的 redis 容器重新启动
+可以看到新的数据同步到改节点，该节点变为 slave 节点
+
+
+## logstash 过滤日志
 
 # 客户端
 
