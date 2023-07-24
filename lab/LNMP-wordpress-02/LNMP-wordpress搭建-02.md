@@ -1527,23 +1527,26 @@ output.redis:
   timeout: 5
   key: "nginx"
   keys:
-    - key: "nginx_access"   
+    - key: "nginx-access"   
       when.contains:
-        tags: "nginx_access"
-    - key: "nginx_error"  
+        tags: "nginx-access"
+    - key: "nginx-error"  
       when.contains:
-        tags: "nginx_error"
+        tags: "nginx-error"
 ```
 
-问题：上面想根据日志的 tags 来设置不同的 Key，但设置失败，最终 redis 中只有一个 Key "nginx"
+- 可以利用 inputs 模块定义的 tags 将访问日志和错误日志分别存放在 nginx 不同的 key 中 
+- filebeat 支持 hosts 写多个
+> If load balancing is enabled, the events are distributed to the servers in the list. 
+> If one server becomes unreachable, the events are distributed to the reachable servers only.
+
 
 ## 测试 redis 接收日志
 - 共有三个 redis 容器，配置哨兵，分别进入三个 redis 容器中查看
 ```bash
-127.0.0.1:6379> keys nginx
-1) "nginx"
-127.0.0.1:6379> LLEN nginx
-(integer) 13
+127.0.0.1:6379> keys  nginx*
+1) "nginx-error"
+2) "nginx-access"
 ```
 可以通过 `info replication` 查看各节点状态，最初一个 master，两个 slave
 从节点配置只读，因此 filebeat 会找到 master 节点写入再同步到 slave 节点
@@ -1556,6 +1559,49 @@ output.redis:
 
 
 ## logstash 过滤日志
+- logstash 从 redis 获取数据，进行过滤处理后发送给 elasticsearch
+
+### <font color=red>问题</font>
+- logstash redis input 插件中 host 如果将三个 redis 服务器都写上，
+虽然也能获取数据，但会报错，因为不能从 slave 节点采集数据
+
+```bash
+input {
+	redis {
+        host => "10.0.0.208"
+        port => "6370"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+	redis {
+        host => "10.0.0.208"
+        port => "6371"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+	redis {
+        host => "10.0.0.208"
+        port => "6372"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+}
+```
+
+- 不支持 host 写多个，host 和 port 要分开写
+和 filebeat 不同，filebeat 可以写多个 host，跳过不能写的 host
+```bash
+
+```
+
+
+
 
 # 客户端
 
