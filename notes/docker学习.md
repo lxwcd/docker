@@ -6,13 +6,11 @@ Docker 学习
 > Docker 客户端命令：[Use the Docker command line](https://docs.docker.com/engine/reference/commandline/cli/)
 > Dockerfile 官网介绍：[Dockerfile reference](https://docs.docker.com/engine/reference/builder/#arg)
 > Docker 容器镜像仓库：[dockerhub](https://hub.docker.com/)
-
-
+> [Demystifying Containers](https://github.com/saschagrunert/demystifying-containers/tree/master)
 
 
 # PaaS、IaaS、SaaS 与 CaaS
 > [PaaS、IaaS、SaaS 与 CaaS：它们有何不同？](https://cloud.google.com/learn/paas-vs-iaas-vs-saas?hl=zh-cn)
-
 
 
 # 容器（Container）
@@ -41,7 +39,6 @@ Docker 学习
 为开发者提供在逻辑上与其他应用相隔离的操作系统接口
 
 
-
 ## 容器和虚拟机
 > [什么是容器](https://cloud.google.com/learn/what-are-containers?hl=zh-cn)
 > [Containers vs. virtual machines](https://www.atlassian.com/microservices/cloud-computing/containers-vs-vms)
@@ -60,45 +57,198 @@ Docker 学习
 一个宿主机上的所有容器共享硬件系统
 
 
+## 容器管理工具
+- LXC
+- docker
+- pouch
+- [podman](https://podman.io/)
 
-## 容器的种类
-> [Containers vs. virtual machines](https://www.atlassian.com/microservices/cloud-computing/containers-vs-vms)
+## 容器规范
+> [Open Container Initiative](https://opencontainers.org/)
 
+The OCI currently contains three specifications: the Runtime Specification (runtime-spec), the Image Specification (image-spec) and the Distribution Specification (distribution-spec).
 
-- Docker
-- RKT
-- Linux Containers (LXC)
+## Container Runtime
+> [What are container runtimes?](https://opensource.com/article/21/9/container-runtimes)
+> [Most Popular Container Runtimes](https://www.cloudraft.io/blog/container-runtimes)
 
+容器运行时（Container Runtime）是一种负责在操作系统上创建、运行和管理容器的软件组件。它提供了容器的生命周期管理、文件系统隔离、网络配置和资源管理等功能，使得容器能够在操作系统上以独立的方式运行。
 
+容器运行时有两个级别：
+- low-level container runtime
+Container runtimes focus more on running containers, setting up namespace and cgroups for containers, and are also called lower-level container runtimes. 
 
+接近内核层，例如 runc 是 docker 使用的 low-level runtime
+- high-level container runtime
+Higher-level container runtimes or container engines focus on formats, unpacking, management, and image-sharing. They also provide APIs for developers.
 
+接近用户层，如 docker engine，k8s 中使用的 cri-o
 
-- KVM 和 Docker 比较
+# Docker 介绍
+> [Docker Overview](https://docs.docker.com/get-started/overview/)
 
-Docker 隔离性没有 KVM 上装多个虚拟机隔离性好
+Docker is an open platform for developing, shipping, and running applications. Docker enables you to separate your applications from your infrastructure so you can deliver software quickly.
 
+容器的前端管理工具
 
+- KVM 和 Docker 
 KVM 单机管理虚拟机
 Openstack 管理多主机上全部的虚拟机
 
-
-docker 管理单个物理机上单个容器
+docker 单机管理容器
 docker compose：单个主机容器编排工具，类似 makefile, ansible 的 playbook
 kurbernets 管理多主机上全部容器
 
+Docker 隔离性没有 KVM 上装多个虚拟机隔离性好
 
-windows 上运行容器：WLS ?
+- docker 缺点
+宿主机多个容器共享内核，隔离性不如虚拟机
+容器和宿主机的进程隔离，进入容器中调试容器内的进程等很繁琐
+如果要进入容器中调试，则需要在每个容器中安装相应工具，浪费存储空间
+
+# Docker 架构
+> [Docker Overview](https://docs.docker.com/get-started/overview/)
 
 
-# Docker 的组成
+- C/S 架构
+- The Docker client and daemon communicate using a REST API, over UNIX sockets or a network interface. 
 
-镜像：模板，文件，静态文件，占磁盘
-容器：进程，占内存，占磁盘
+![](img/2023-12-04-10-02-42.png)
 
-docker run hello-world
-hello-world 为容器镜像，本地没有则到官网下载
 
-一次性运行，执行完就结束，但容器还在，存在磁盘上，相同镜像启动两个容器，分别在磁盘存放两个不同镜像，有不同的 container ID 和 Name
+## Docker deamon
+The Docker daemon (dockerd) listens for Docker API requests and manages Docker objects such as images, containers, networks, and volumes. A daemon can also communicate with other daemons to manage Docker services.
+
+## Docker client
+The Docker client (docker) is the primary way that many Docker users interact with Docker. When you use commands such as docker run, the client sends these commands to dockerd, which carries them out. The docker command uses the Docker API. The Docker client can communicate with more than one daemon.
+
+## Docker registries
+> Docker 容器镜像仓库：[dockerhub](https://hub.docker.com/)
+
+A Docker registry stores Docker images. Docker Hub is a public registry that anyone can use, and Docker looks for images on Docker Hub by default. You can even run your own private registry.
+
+When you use the docker pull or docker run commands, Docker pulls the required images from your configured registry. When you use the docker push command, Docker pushes your image to your configured registry.
+
+- docker 镜像仓库，默认为官方的镜像仓库，也可以配置自己的私有仓库
+
+## Docker objects
+
+### Images 镜像
+> [Images and layers](https://docs.docker.com/storage/storagedriver/#images-and-layers)
+> [Docker - Behind the Scenes](https://accenture.github.io/blog/2021/03/10/docker-behind-the-scenes.html)
+> [Docker Images and How to work with them ](https://medium.com/@dsametriya/docker-images-and-how-to-work-with-them-db7aac383479)
+
+
+An image is a read-only template with instructions for creating a Docker container. 
+
+创建 Docker 容器的只读模板，可以从官方或第三方仓库拉取镜像，或者自己制作镜像
+
+镜像是静态文件，占磁盘
+
+To build your own image, you create a Dockerfile with a simple syntax for defining the steps needed to create the image and run it. 
+
+Each instruction in a Dockerfile creates a layer in the image. When you change the Dockerfile and rebuild the image, only those layers which have changed are rebuilt. 
+This is part of what makes images so lightweight, small, and fast, when compared to other virtualization technologies.
+
+镜像是分层的，镜像的底层为只读的库文件，启动为容器后会生成一个可写层，写入的数据会赋值到宿主机中对于的目录，默认容器删除后该目录的内容也删除
+
+
+常用 alpine 作为基础镜像以减小体积
+另一个 busybox 也可以做基础，但太小，没有 alpine 适合
+
+#### UnionFS
+> [Docker - Behind the Scenes](https://accenture.github.io/blog/2021/03/10/docker-behind-the-scenes.html)
+> [HOW DOCKER IMAGES WORK: UNION FILE SYSTEMS FOR DUMMIES](https://www.terriblecode.com/blog/how-docker-images-work-union-file-systems-for-dummies/)
+
+
+> The union file system (UnionFS) enables storage efficiency for Docker images and containers. 
+
+> Docker uses UnionFS with a copy-on-write strategy. When changes get applied to a Docker image, it creates a new layer on top that does not affect layers below. This enables Docker to propagate changes efficiently, as only layer updates need to be distributed.
+
+在 Docker 中使用的 UnionFS（联合文件系统）是一种文件系统技术，它允许将多个不同的文件系统层级以可写的方式联合在一起，形成一个单一的虚拟文件系统。UnionFS 是 Docker 实现镜像分层和容器轻量级的关键技术之一。
+
+
+#### dangling image 
+A Docker dangling image refers to an image that has been untagged and is not in use by any running containers or other images. In other words, a dangling image is an image that has no name and no tag, and it's not being used by any containers or other images.
+
+Dangling images can be created when a new version of an image is built, and the previous version of the image is no longer needed. If an image is removed or deleted with the `docker rmi` command, any associated containers must first be removed before the associated image can be deleted. If one or more containers that are based on a particular image are still running, then the image will not be removed and instead will be marked as a dangling image.
+
+Docker automatically removes dangling images when the `docker system prune` command is run. This command removes stopped containers, unused networks, and dangling images, freeing up disk space on the host system.
+
+Note that dangling images can also occur when a build context is used to create new images. If a file is removed or renamed in the build context, the previous docker layers that used that file will become unused and may be removed as a result. This can lead to additional dangling images on the host system.
+
+
+docker system prune 清理不用的容器、镜像等
+
+### Containers 容器
+> [Demystifying Containers](https://github.com/saschagrunert/demystifying-containers/tree/master)
+
+A container is a runnable instance of an image. You can create, start, stop, move, or delete a container using the Docker API or CLI. You can connect a container to one or more networks, attach storage to it, or even create a new image based on its current state.
+
+容器是镜像的运行的实例，可以对容器进行创建、启动、删除等操作，可以修改容器后基于当前状态创建镜像
+
+容器是进程，占磁盘和内存
+
+默认一个宿主机上的多个容器是相互隔离的
+You can control how isolated a container's network, storage, or other underlying subsystems are from other containers or from the host machine.
+
+一个 Docker 主进程内各个容器都是其子进程，各子进程需要隔离
+
+#### Linux Namespace 名称空间
+> [Linux Namespaces](https://github.com/saschagrunert/demystifying-containers/blob/master/part1-kernel-space/post.md#linux-namespaces)
+> [Linux namespaces](https://en.wikipedia.org/wiki/Linux_namespaces)
+
+- 内核功能
+- The idea behind a namespace is to wrap certain global system resources in an abstraction layer. 
+- 不同名称空间的进程相互隔离
+- `lsns` 查看 linux 名称空间
+
+名称空间的类型：
+- Mount (mnt)
+挂载点和文件系统的隔离
+- Unix Time-sharing System (uts)
+UTS (UNIX Time-Sharing) namespaces allow a single system to appear to have different host and domain names to different processes.
+
+允许和系统不同的主机和域名
+- Interprocess Communication (ipc)
+IPC namespaces isolate processes from SysV style inter-process communication. This prevents processes in different IPC namespaces from using, for example, the SHM family of functions to establish a range of shared memory between the two processes. 
+
+进程通信的隔离，包括信号量、消息队列和共享内存
+- Porcess ID (pid)
+The PID namespace provides processes with an independent set of process IDs (PIDs) from other namespaces. 
+This means that processes which reside in different namespaces can own the same PID. 
+- Network (net)
+Network namespaces virtualize the network stack. On creation, a network namespace contains only a loopback interface.
+
+Each network namespace contains its own resource properties within /proc/net. 
+
+Each namespace will have a private set of IP addresses, its own routing table, socket listing, connection tracking table, firewall, and other network-related resources.
+- User ID (user)
+User namespaces are a feature to provide both privilege isolation and user identification segregation across multiple sets of processes available since kernel 3.8.
+
+A user namespace contains a mapping table converting user IDs from the container's point of view to the system's point of view. 
+例如容器中的 root 用户 id 为 0，但其在宿主机中的 id 可能为 1800
+- Control Group (cgroup)
+The main goal of cgroups is to support resource limiting, prioritization, accounting and controlling. 
+
+进程的资源限制
+- Timing
+The time namespace allows processes to see different system times in a way similar to the UTS namespace. 
+
+
+# Docker 存储引擎 overlay2
+> [About storage drivers](https://docs.docker.com/storage/storagedriver/)
+> [Docker storage drivers](https://docs.docker.com/storage/storagedriver/select-storage-driver/)
+> [Configure Docker with the overlay2 storage driver](https://docs.docker.com/storage/storagedriver/overlayfs-driver/)
+
+
+Docker uses storage drivers to store image layers, and to store data in the writable layer of a container. 
+
+Each layer is only a set of differences from the layer before it. Note that both adding, and removing files will result in a new layer. 
+
+The layers are stacked on top of each other. When you create a new container, you add a new writable layer on top of the underlying layers. This layer is often called the "container layer". All changes made to the running container, such as writing new files, modifying existing files, and deleting files, are written to this thin writable container layer. 
+
+镜像是分层的，见 [About storage drivers](https://docs.docker.com/storage/storagedriver/) 中的示例讲解
 
 
 overlay2 存储引擎 各层叠加
@@ -110,128 +260,127 @@ Overlay2 uses two directories on the host system for Docker storage, the lower d
 
 Overlay2 also uses a file system delta-compression technique known as "deduplication" to limit the disk space usage. This technique identifies files with identical content across layers and stores them only once. This reduces the size of the container images and improves the performance by reducing I/O operations.
 
-In summary, Overlay2 is a storage driver used by Docker to manage container file systems. It enables containers to share the same base image and uses deduplication to reduce the size of the container images and improve overall performance.
-
-可以修改存储引擎
-
-
-docker 客户端用 socket 和 dockerd 守护进程通信
-
-# Docker 优化
-用镜像网址代替官网
-
-如果客户端和服务端不在一个主机，docker 服务端和客户端通信改为端口通信，默认本地套接字通信
-
-
-
-docker 不建议使用交换空间 swap
-禁用 swap 空间 /etc/fstab 注释 swap off
-systemctl mask swap.target systemctl stop swap.target
-
-
-私有仓库 insecure-registry 
-
-Docker Root Dir: /var/lib/docker dockers 全部镜像和数据的默认目录，最好用高速磁盘存放
-可以修改默认目录
-运行容器过程中修改目录，则需要先停止 docker，
-
-
-同时上传下载限制
-
-
-限制日志文件的大小，日志默认在 /var/lib/docker 目录中
-
-
-
-********
-搜索包含某内容的文件
-grep -r|R /var/lib/docker
-
-**************
-
-live-restore: true docker 服务器重启后原来正在
-运行的容器不受影响
-
-
-
-
-
-# Namespace
-- 内核功能
-
-
-
-# Control groups
-- 内核功能，限制资源，防止某个容器一直占用资源
-
-
-
-# 容器管理工具
-- docker 是容器前端管理工具
-- 
-
-
 # Docker 安装
 > [Install Docker Engine](https://docs.docker.com/engine/install/)
-
-
-- 安装要求
-
-- ubuntu22.04 安装 docker
-
+> [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/#your-kernel-does-not-support-cgroup-swap-limit-capabilities)
+> [阿里云镜像](https://developer.aliyun.com/mirror/docker-ce?spm=a2c6h.13651102.0.0.57e31b11nSQP6A)
 
 
 注意各组件版本一致问题
-
-
 docker 客户端可以在另一台主机上，管理本机 docker
 
+按照官方文档步骤包安装，其中 docker 仓库的地址可以该为镜像仓库地址，即 /etc/apt/sources.list.d/docker.list 中的地址 `https://download.docker.com/linux/ubuntu` 改为 `https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/`
 
 
-# 镜像管理
-hub.docker.com
+# Docker 优化
+如果官方下载慢，可以用镜像网址代替官网
 
-镜像系统：alpline 
-busybox：太小
+如果客户端和服务端不在一个主机，docker 服务端和客户端通信改为端口通信，默认本地套接字通信
 
-用 alpine 作为基础镜像
+docker 不建议使用交换空间 swap
+禁用 swap 空间：/etc/fstab 注释交换空间的行，然后命令 swapoff 禁用
 
+私有仓库加入 insecure-registry 
 
-docker system prune 清理不用的容器、镜像等
+Docker Root Dir: /var/lib/docker dockers 全部镜像和数据的默认目录，最好用高速磁盘存放
+可以修改默认目录，运行容器过程中修改目录，则需要先停止 docker
 
-dangling image 
+同时上传下载限制
 
-A Docker dangling image refers to an image that has been untagged and is not in use by any running containers or other images. In other words, a dangling image is an image that has no name and no tag, and it's not being used by any containers or other images.
+限制日志文件的大小，日志默认在 /var/lib/docker 目录中
 
-Dangling images can be created when a new version of an image is built, and the previous version of the image is no longer needed. If an image is removed or deleted with the `docker rmi` command, any associated containers must first be removed before the associated image can be deleted. If one or more containers that are based on a particular image are still running, then the image will not be removed and instead will be marked as a dangling image.
-
-Docker automatically removes dangling images when the `docker system prune` command is run. This command removes stopped containers, unused networks, and dangling images, freeing up disk space on the host system.
-
-Note that dangling images can also occur when a build context is used to create new images. If a file is removed or renamed in the build context, the previous docker layers that used that file will become unused and may be removed as a result. This can lead to additional dangling images on the host system.
-
-
-# 镜像结构和原理
-
-## rootfs
+# Docker 配置
+> [Docker daemon configuration overview](https://docs.docker.com/config/daemon/)
+> 配置示例：[Daemon configuration file](https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-configuration-file)
+> docker 配置代理：[https://docs.docker.com/network/proxy/](https://docs.docker.com/network/proxy/)
+> [Proxy configuration](https://docs.docker.com/engine/reference/commandline/dockerd/#proxy-configuration)
 
 
+- 配置文件位置：`/etc/docker/daemon.json`
 
-## bootfs
+```bash
+{ 
+  "proxies": {
+    "http-proxy": "http://192.168.0.119:7890",
+    "https-proxy": "http://192.168.0.119:7890",
+    "no-proxy": "localhost,127.0.0.0/8,registry.cn-hangzhou.aliyuncs.com*"
+  },
+  "registry-mirrors": [
+    "https://registry.docker-cn.com",
+    "http://hub-mirror.c.163.com",
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://si7y70hh.mirror.aliyuncs.com/"
+  ],
+  "insecure-registries": ["registry.cn-hangzhou.aliyuncs.com"],
+  "max-concurrent-downloads": 10,
+  "max-concurrent-uploads": 5,
+  "log-opts": {
+    "cache-disabled": "false",
+    "cache-max-file": "5",
+    "cache-max-size": "20m",
+    "cache-compress": "true",
+    "env": "os,customer",
+    "labels": "somelabel",
+    "max-file": "5",
+    "max-size": "100m"
+  },
+  "dns": ["10.0.0.200", "10.0.0.201"],
+  "live-restore": true
+}
+```
 
+- live-restore: true docker 服务器重启后原来正在运行的容器不受影响
+- insecure-registry: 设置自定义的镜像仓库地址，允许该仓库使用不安全的传输协议，如 http，默认 docker 客户端只允许连接和拉取使用安全传输协议的镜像仓库
+- registry-mirrors: 使用镜像仓库拉取镜像，更快下载
+如果配置代理，可以不配置镜像网址，或者将镜像网址加入 no_proxy
 
+修改配置后时其生效：
+```bash
+[root@docker ~]$ systemctl daemon-reload; systemctl restart docker.service
+```
 
-
+# 容器内部 hosts 文件
+容器会自动将容器ID 加入容器内 /etc/hosts 文件中解析为其 IP 地址
 
 # Docker 客户端命令
 > [Use the Docker command line](https://docs.docker.com/engine/reference/commandline/cli/)
 
+## docker version 查看版本
+
+## docker info 查看详细信息
+镜像数，容器数等详细信息
+
+## docker search 搜索镜像
+```bash
+docker search --filter=is-automated=true --filter=stars=1 fedora
+```
+
+## docker inspect 查看详细信息
+> [docker inspect](https://docs.docker.com/engine/reference/commandline/inspect/)
+
+Docker inspect provides detailed information on constructs controlled by Docker.
+
+默认返回结果是 json 格式
+
+可以查看容器、镜像、网络等详细信息
+> --type container|image|node|network|secret|service|volume|task|plugin
+
+```bash
+docker inspect --type=volume myvolume
+```
+
+## docker system prune 清除不用的数据
+> [docker system prune](https://docs.docker.com/engine/reference/commandline/system_prune/)
+
+Remove all unused containers, networks, images (both dangling and unreferenced), and optionally, volumes.
 
 
+## docker image 镜像操作相关命令
+有些可以省略 `image` 子命令，如 `docker pull`，其和 `docker image pull` 相同
 
+`docker image -h` 查看子命令
 
-
-
-## docker pull 拉取镜像
+### docker pull 拉取镜像
 > [docker pull](https://docs.docker.com/engine/reference/commandline/pull/)
 
 - 如从 docker hub 拉取 ubuntu 镜像，先找到 ubuntu 镜像仓库：[ubuntu](https://hub.docker.com/_/ubuntu)
@@ -247,75 +396,146 @@ Status: Downloaded newer image for ubuntu:22.04
 docker.io/library/ubuntu:22.04
 ```
 
+默认镜像保存路径为：/var/lib/docker/overlay2/镜像ID
 
+### docker images 查看本地镜像
+> [docker images](https://docs.docker.com/engine/reference/commandline/images/)
 
+查看帮助 `docker images -h`
 
-
-
-
-## docker logs 查看容器的日志
-容器中前台执行的进程才有日志
-前台执行标准输出的内容可盈用该方式查看
-
-
-## docker images 查看当前镜像
-
-
-## docker ps 
-
-
-## docker inspect 查看资源详细信息
-
-
-## docker cp 容器和宿主机之前复制文件
-> [docker cp](https://docs.docker.com/engine/reference/commandline/cp/)
-
-- 指定容器名可以用容器的 ID（可以不写全，但写出的部分能唯一定位容器）或 NAMES
-
-
-### 将容器的一个目录拷贝到宿主机的目录中
-- 如果不想拷贝容器目录只拷贝目录中的文件，则目录最后加 /.
+#### docker images -q 仅显示镜像 ID
 ```bash
-[root@docker nginx]$ docker cp nginx-02:/data/www/. data/ -a
-```
-- 拷贝目录本身以及目录中的文件
-```bash
-[root@docker nginx]$ docker cp nginx-02:/data/www/ data/ -a
+[root@docker ~]$ docker images hello-world -q
+9c7a54a9a43c
 ```
 
+#### 设置显示格式
+```bash
+[root@docker ~]$ docker image ls --format "{{.Repository}}:{{.Tag}}"
+nginx-alpine:2.14-v2
+redis-alpine:7.0.11-v1
+alpine-base:3.18-v1
+haproxy:2.8.0-alpine3.18
+redis:7.0-alpine
+ubuntu22.04-base:v1
+hello-world:latest
+mysql:5.7
+```
 
-## docker run
-运行容器
+#### 查看 untagged 镜像
+```bash
+docker images -f "dangling=true"
+```
+
+### docker inspect 查看镜像详细信息
+
+### docker history 查看镜像创建历史
+
+
+### docker save 导出镜像
+> [docker save](https://docs.docker.com/engine/reference/commandline/save/)
+
+将本地镜像导出为一个 tar 文件，方便后续赋值到其他宿主机使用
+可以导出多个镜像
+
+```bash
+docker save -o fedora-latest.tar fedora:latest
+docker save myimage:latest | gzip > myimage_latest.tar.gz
+docker save -o ubuntu.tar ubuntu:lucid ubuntu:saucy
+```
+
+### docker load 导入镜像
+```bash
+docker load -i fedora.tar
+```
+
+### docker image rm 删除本地镜像
+或者用 `docker rmi`
+
+如果要删除正在使用的镜像，则用 `docker image rm -f`
+
+
+### docker image prune 删除不使用的镜像
+> [docker image prune](https://docs.docker.com/engine/reference/commandline/image_prune/)
+
+Remove all dangling images. If -a is specified, will also remove all images not referenced by any container.
+
+### docker tag 给镜像打标签
+> [docker tag](https://docs.docker.com/engine/reference/commandline/tag/)
+
+```bash
+docker tag httpd:test fedora/httpd:version1.0.test
+```
+
+## docker container 容器管理相关命令
+很多命令可以省略 `container`，如 `docker container run`，也可以直接使用 `docker run`
+
+### docker ps 显示容器信息
+- 默认进显示正在运行的容器
+- 和 `docker container ls` 相同
+
+#### docker ps -a 显示全部容器
+
+#### docker ps -q 仅显示容器ID
+
+#### docker ps -s 显示容器大小
+
+#### docker ps -l 显示最新创建的容器
+- `--latest`
+
+#### docker ps -f 过滤输出
+```bash
+docker ps -f 'status=exited'
+```
+
+### docker run 运行容器
 如果要容器运行不退出，需要执行前台命令
 
 如 alpine 这种操作系统镜像，默认运行执行的命令为 /sbin/sh，执行完就退出
 而 nginx 镜像会执行一个持续运行的前台命令，持续运行，提供服务
 
+在容器内退出并停止容器：exit
+在容器内退出但不停止容器：ctrl+p+q
 
-### docker run -it 交互执行
-
-
-###  docker run --name
-指定容器名字
+#### docker run -it 交互执行
 
 
-### docker run -hostname
-指定容器主机名
-
-### docker run --rm 退出后删除容器
+####  docker run --name 指定容器名字
 
 
-### docker run -d 容器后台执行
-这个后台是否跟终端有关
-&
-nohub
-tmux|screen
+#### docker run -hostname 指定容器主机名
+
+#### docker run --rm 退出后删除容器
+
+#### docker run -d 容器后台执行
+`--detach`，容器进程在宿主机的后台运行，与终端无关
+
+#### docker run --restart 指定容器启动的策略
+> [docker run --restart](https://docs.docker.com/engine/reference/commandline/run/#restart)
+
+A restart policy controls whether the Docker daemon restarts a container after exit.
+
+- no
+默认
+Do not automatically restart the container when it exits. 
+- on-failure[:max-retries]
+Restart only if the container exits with a non-zero exit status. Optionally, limit the number of restart retries the Docker daemon attempts.
+
+容器异常退出才重启
+- unless-stopped
+Restart the container unless it's explicitly stopped or Docker itself is stopped or restarted.
+- always
+Always restart the container regardless of the exit status. When you specify always, the Docker daemon tries to restart the container indefinitely. The container always starts on daemon startup, regardless of the current state of the container.
 
 
-### docker run --restart 指定容器启动的策略
+```bash
+docker run --restart=always redis
+```
 
+#### docker run -P|-p 暴露容器端口
+> --publish	-p		Publish a container's port(s) to the host
+> --publish-all	-P		Publish all exposed ports to random ports
 
-### docker run -P|-p 暴露容器端口
 容器中的网络采用 NAT 模式
 如果容器中运行 nginx web 服务，外部用户无法访问容器中的服务器，容器中服务器与外部通信时其 IP 通过 SNAT 转换为其宿主机的 IP
 
@@ -329,62 +549,160 @@ tmux|screen
 - docker run -p
 可以指定端口映射
 
+```bash
+docker run -p 127.0.0.1:80:8080/tcp ubuntu bash
+```
+曝露容器的 8080 到宿主机换回网卡的TCP 80 端口
 
 - 修改已经创建的容器的端口映射关系
 
 
-### docker run -e 创建环境变量
+#### docker run -e 创建环境变量
+> [docker run -e](https://docs.docker.com/engine/reference/commandline/run/#env)
 
 
-### --rm 容器退出时自动删除
+```bash
+docker run --env VAR1=value1 --env VAR2=value2 ubuntu env | grep VAR
+```
+
+可以 `--env-file` 指定环境变量文件
+```bash
+cat env.list
+# This is a comment
+VAR1=value1
+VAR2=value2
+USER=jonzeolla
+
+docker run --env-file env.list ubuntu env | grep -E 'VAR|USER'
+VAR1=value1
+VAR2=value2
+USER=jonzeolla
+```
+
+#### docker run --dns 指定容器 DNS
+默认容器用宿主机的 DNS 地址
+
+```bash
+docker run -it --rm --dns 1.1.1.1 --dns 8.8.8.8 ubuntu bash
+```
+
+或者在配置文件 /etc/docker/daemon.json 中配置
+
+### 容器的启动和停止
+> docker start|stop|restart|pause|unpause
+
+### docker kill 给容器发信号
+默认发送 SIGKILL 信号
+```bash
+docker kill my_container
+```
+
+```bash
+docker kill --signal=SIGHUP my_container
+docker kill --signal=HUP my_container
+docker kill --signal=1 my_container
+```
+
+### docker attach 连接运行的容器
+Attach local standard input, output, and error streams to a running container.
+
+This allows you to view its ongoing output or to control it interactively, as though the commands were running directly in your terminal.
+
+用 exit 后容器会退出
+
+### docker exec 执行容器命令
+
+- 一般指定 shell 类型
+
+进入容器，指定所用终端 shell 为 bash
+```bash
+docker exec -it mycontainer bash
+```
+
+- 进入后可以执行 exit 退出容器，通过 docker ps -a 查看容器已经处于退出状态，可以再用 docker start 启动容器
+
+### docker port 查看容器端口映射关系
 
 
-### docker run 传递命令
+### docker rm 删除容器
 
+```bash
+Options:
+  -f, --force     Force the removal of a running
+                  container (uses SIGKILL)
+  -l, --link      Remove the specified link
+  -v, --volumes   Remove anonymous volumes associated with the container
+```
 
+删除运行中的容器
+```bash
+docker rm -f redis
+```
 
+删除全部容器
+```bash
+docker rm -f $(docker ps -a -q)
+#或
+docker ps -a -q | xargs docker rm -f
+```
 
+删除已退出的容器
+```bash
+docker rm `docker ps -qf status=exited`
+```
 
+删除运行中的容器
+```bash
+docker rm `docker ps -qf status=running`
+```
 
-## docker ps 显示容器信息
+删除全部容器
+```bash
+docker container prune -f
+```
 
-
-### docker ps 显示正在运行的全部容器
-- 相当于 `docker ps -a`
-
-
-### docker -f 筛选条件过滤
-
-
-## docker top 查看容器内的进程
+### docker top 查看容器内进程
 不进入容器查看容器内进程，显示的 PID 为容器在宿主机中的 PID
 
 如果进入容器中查看进程，PID 为容器中独立的 PID
+ 
+### docker stats 查看容器资源使用情况
 
+### docker logs 查看容器的日志
+> [docker logs](https://docs.docker.com/engine/reference/commandline/logs/)
 
+查看容器中运行的进程在控制台输出的日志信息，日志在 /var/lib/docker/container 目录下
 
-### docker ps -q 仅显示容器的 ID 
-结合 `docker ps -f` 删除已经退出的容器
+容器中前台执行标准输出的内容可以用该方式查看
 
+### 容器启动时执行命令
+```bash
+docker run -d alpine tail -f /etc/hosts
+```
 
-## docker exec 进入已经运行的容器
-- 一般指定 shell 类型
+### docker cp 容器和宿主机之前复制文件
+> [docker cp](https://docs.docker.com/engine/reference/commandline/cp/)
 
-- 进入后可以执行 exit 退出容器，通过 docker ps -a 查看容器已经处于退出状态，
-  可以再用 docker start 启动容器
+- 指定容器名可以用容器的 ID（可以不写全，但写出的部分能唯一定位容器）或 NAMES
+- 容器是否正在运行都能复制
 
+#### 将容器的一个目录拷贝到宿主机的目录中
+```bash
+Usage:  docker cp [OPTIONS] CONTAINER:SRC_PATH DEST_PATH|-
+        docker cp [OPTIONS] SRC_PATH|- CONTAINER:DEST_PATH
+```
 
-## docker history 查看镜像创建历史
+- 如果不想拷贝容器目录只拷贝目录中的文件，则目录最后加 /.
+```bash
+[root@docker nginx]$ docker cp nginx-02:/data/www/. data/ -a
+```
+- 拷贝目录本身以及目录中的文件
+```bash
+[root@docker nginx]$ docker cp nginx-02:/data/www/ data/ -a
+```
 
-# busybox 
-- busybox 模拟命令
-- 
 
 # 创建镜像
-
-
-
-
 
 ## docker commit 基于容器创建镜像
 - `man docker-commit` 查看帮助
@@ -665,7 +983,6 @@ MergeDir: 全部的数据
 启动容器时，可以指定使用数据卷实现容器的持久化
 
 - 指定宿主机目录或文件，指定宿主机的具体路径和容器路径的挂载关系，不会创建数据卷？
-这种和第三种区别？这种可以指定目录，第三种目录固定？
 
 直接挂载到宿主机，不是数据卷
 
@@ -685,6 +1002,14 @@ docker -v <卷名>:<容器目录>
 存放在 /var/lib/docker/volume/<卷名>/_data 目录中
 
 宿主机路径和容器路径
+
+
+## 宿主机文件/文件夹挂载到容器
+如果将宿主机的文件挂载，宿主机中的文件必须存在，如
+```bash
+docker run -v /home/user/data.txt:/app/data.txt image_name
+```
+如果挂载宿主机的目录到容器中，目录可以不存在，docker run 运行时会自动创建目录
 
 
 
@@ -1518,6 +1843,59 @@ Chain DOCKER-USER (1 references)
 依赖 docker，docker service 必须正常运行
 
 insecure-registries: 不走 443
+
+
+## 安装
+> [Install the Compose plugin](https://docs.docker.com/compose/install/linux/#install-the-plugin-manually)
+
+
+- 从镜像网站下载想要安装的包
+> [清华大学镜像源](https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/dists/jammy/pool/stable/amd64/)
+
+```bash
+wget https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/dists/jammy/pool/stable/amd64/docker-compose-plugin_2.19.1-1~ubuntu.22.04~jammy_amd64.deb
+```
+
+- dpkg  安装
+```bash
+ dpkg -i docker-compose-plugin_2.19.1-1~ubuntu.22.04~jammy_amd64.deb
+```
+
+```bash
+[root@es-cluster cli-plugins]$ dpkg -s docker-compose-plugin
+Package: docker-compose-plugin
+Status: install ok installed
+Priority: optional
+Section: admin
+Installed-Size: 59117
+Maintainer: Docker <support@docker.com>
+Architecture: amd64
+Source: docker-ce (5:24.0.3-1~ubuntu.22.04~jammy)
+Version: 2.19.1-1~ubuntu.22.04~jammy
+Enhances: docker-ce-cli
+Description: Docker Compose (V2) plugin for the Docker CLI.
+ .
+ This plugin provides the 'docker compose' subcommand.
+ .
+ The binary can also be run standalone as a direct replacement for
+ Docker Compose V1 ('docker-compose').
+Homepage: https://github.com/docker/compose
+```
+
+- 查看软件包中的文件
+```bash
+[root@es-cluster cli-plugins]$ dpkg -L docker-compose-plugin
+/.
+/usr
+/usr/libexec
+/usr/libexec/docker
+/usr/libexec/docker/cli-plugins
+/usr/libexec/docker/cli-plugins/docker-compose
+/usr/share
+/usr/share/doc
+/usr/share/doc/docker-compose-plugin
+/usr/share/doc/docker-compose-plugin/changelog.Debian.gz
+```
 
 
 # 高可用

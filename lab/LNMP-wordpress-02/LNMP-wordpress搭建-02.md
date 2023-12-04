@@ -1561,10 +1561,11 @@ output.redis:
 ## logstash 过滤日志
 - logstash 从 redis 获取数据，进行过滤处理后发送给 elasticsearch
 
-### <font color=red>问题</font>
+### <font color=red>redis 集群主机问题</font>
 - logstash redis input 插件中 host 如果将三个 redis 服务器都写上，
-虽然也能获取数据，但会报错，因为不能从 slave 节点采集数据
+虽然也能获取数据，但会有错误日志，因为不能从 slave 节点采集数据
 
+如写成
 ```bash
 input {
 	redis {
@@ -1593,12 +1594,16 @@ input {
 	}
 }
 ```
+怎么忽略错误？
+
 
 - 不支持 host 写多个，host 和 port 要分开写
 和 filebeat 不同，filebeat 可以写多个 host，跳过不能写的 host
-```bash
 
-```
+### 
+
+logstash 过滤 nginx 访问日志
+nginx 访问日志是 json 格式，日志存放在 redis 的 nginx-access key 中
 
 
 
