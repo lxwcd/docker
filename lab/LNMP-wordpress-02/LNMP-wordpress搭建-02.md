@@ -841,8 +841,7 @@ include /etc/keepalived/conf.d/*.conf
 ```  
 - `router_id` 标识当前 keepalived server，因为 keepalived 通过 VRRP 协议实现 high-availability，而 VRRP 最初是为了实现网关的高可用，因此名字为 `router_id`  
     
-- `vrrp_mcast_group4` 为多播地址，keepalived 各节点之间需要发布 VRRP 通告，默认使用  
-多播地址 `244.0.0.18`，可以修改，或者改为单播形式，这里不用多播  
+- `vrrp_mcast_group4` 为多播地址，keepalived 各节点之间需要发布 VRRP 通告，默认使用多播地址 `244.0.0.18`，可以修改，或者改为单播形式，这里不用多播  
     
 ### 配置虚拟路由器 vrrp_instance  
 >  A  VRRP  Instance is the VRRP protocol key feature.  
