@@ -59,12 +59,9 @@ useradd -s /sbin/nologin -u 999 -g 999 -r -M mysql
 # 修改宿主机挂载的文件路径和属性  
 在 `docker/dockerfile` 中有初始镜像的数据，创建容器后挂载宿主机的一些目录到容器中存放容器的数据，挂载的目录在 `docker/dockerfile/web/nginx/run.sh` 脚本中指明  
   
-初始挂载目录中的文件和 `docker/dockerfile` 中的初始数据相同，启动容器时会将宿主机的，目录挂载，因此容器的对应目录  
-中的内容会被覆盖，容器运行后会生成一些新数据  
+初始挂载目录中的文件和 `docker/dockerfile` 中的初始数据相同，启动容器时会将宿主机的，目录挂载，因此容器的对应目录中的内容会被覆盖，容器运行后会生成一些新数据  
   
-如果允许一个容器后，想将容器的数据目录还原初始数据，则执行 `docker/dockerfile/web/nginx/init_data.sh` 脚本，  
-该脚本会删除容器的数据，将初始数据拷贝过去并修改属性  
-  
+如果运行一个容器后，想将容器的数据目录还原初始数据，则执行 `docker/dockerfile/web/nginx/init_data.sh` 脚本，该脚本会删除容器的数据，将初始数据拷贝过去并修改属性  
   
 # 拉取镜像  
 - nginx 镜像做好后上传到阿里云镜像仓库，可以用下面命令拉取  
@@ -190,7 +187,7 @@ fi
 docker run --name ${MYSQL_NAME:=mysql-01} \  
            --network container:${NGINX_NAME} \  
            --env-file ./env.list \  
-               -v ${PATH_HOST_PREFIX}/data:/var/lib/mysql \  
+           -v ${PATH_HOST_PREFIX}/data:/var/lib/mysql \  
            -v ${PATH_HOST_PREFIX}/conf/conf.d:/etc/mysql/conf.d \  
            -v ${PATH_HOST_PREFIX}/conf/mysql.conf.d:/etc/mysql/mysql.conf.d \  
            -d ${IMAGE} --character-set-server=utf8mb4  
